@@ -1,0 +1,53 @@
+{
+  "name": "mini-throne",
+  "productName": "Mini Throne",
+  "version": "0.1.0-alpha.1",
+  "description": "A simple Windows client for Minishop, powered by Throne",
+  "author": "3252a8",
+  "license": "GPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "electron .",
+    "check": "tsc --noEmit",
+    "build": "npm run check && vite build && node scripts/build-native.mjs",
+    "package": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:dir": "npm run build && electron-builder --win --dir --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "typescript": "5.9.3",
+    "vite": "7.2.2"
+  },
+  "build": {
+    "appId": "app.minishop.mini-throne",
+    "productName": "Mini Throne",
+    "asar": true,
+    "compression": "maximum",
+    "electronLanguages": ["ru", "en-US"],
+    "directories": {"output": "../artifacts"},
+    "files": ["dist/**", "electron/**", "package.json"],
+    "extraResources": [
+      {"from": "runtime", "to": "engine"},
+      {"from": "native/bin/ProxyGuard.exe", "to": "ProxyGuard.exe"},
+      {"from": "assets/icon.png", "to": "icon.png"},
+      {"from": "assets/rules", "to": "rules"},
+      {"from": "../LICENSE", "to": "licenses/Throne-GPL-3.0.txt"},
+      {"from": "THIRD_PARTY.md", "to": "licenses/THIRD_PARTY.md"}
+    ],
+    "protocols": [{"name": "Mini Throne", "schemes": ["mini-throne"]}],
+    "win": {"target": "nsis", "icon":"assets/icon.ico", "artifactName": "Mini-Throne-Setup-${version}-${arch}.${ext}"},
+    "nsis": {"oneClick": true, "perMachine": false, "differentialPackage": true, "createDesktopShortcut": true, "deleteAppDataOnUninstall": false, "include":"native/installer.nsh"}
+  }
+}

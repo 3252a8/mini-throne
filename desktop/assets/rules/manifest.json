@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/MetaCubeX/meta-rules-dat",
+  "commit": "1df33612b1ccc2346e4dbe47a69facf7d1c780bf",
+  "license_source": "https://github.com/MetaCubeX/meta-rules-dat/blob/master/LICENSE",
+  "license_git_blob": "f288702d2fa16d3cdf0035b15a9fcbc552cd88e7",
+  "files": {
+    "geoip-ru.srs": {
+      "source": "geo/geoip/ru.srs",
+      "sha256": "806538749c4667d8854319a87b0fba6130626ec1b1d50806dde35d0b3f17262e",
+      "bytes": 106422
+    },
+    "geosite-category-ru.srs": {
+      "source": "geo/geosite/category-ru.srs",
+      "sha256": "0da625fcda175aa739c208938c682d49b0ea2bede9f6bff050cdb9a99a8f290b",
+      "bytes": 8298
+    },
+    "geoip-ru.json": {
+      "source": "geo/geoip/ru.json",
+      "sha256": "479fb10f8750bab1c36c0f44e0934571e1e8002c6cc639895d2694e67824ecd5",
+      "bytes": 726127
+    },
+    "geosite-category-ru.json": {
+      "source": "geo/geosite/category-ru.json",
+      "sha256": "bee570c644acf6da4576f4a974c29f8dffa2c5e512a8f17e7d053a1d33d392e3",
+      "bytes": 29998
+    }
+  }
+}

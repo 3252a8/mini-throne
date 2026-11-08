@@ -89,3 +89,15 @@ out
 srslist.h
 .claude
 .qtcreator
+# Mini Throne build products and local credentials
+/desktop/node_modules/
+/desktop/dist/
+/desktop/runtime/
+/desktop/native/bin/
+/artifacts/
+/.local/
+*.key
+*.pem
+*.pfx
+
+/desktop/.cache/
