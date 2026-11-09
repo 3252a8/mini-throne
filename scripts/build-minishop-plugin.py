@@ -8,7 +8,6 @@ import ctypes
 import hashlib
 import json
 import os
-import subprocess
 import zipfile
 from pathlib import Path
 
@@ -48,28 +47,25 @@ def main() -> None:
     parser.add_argument("--machine", default="x86_64")
     parser.add_argument("--python", default="3.12")
     args = parser.parse_args()
-    revision = subprocess.check_output(
-        ["git", "rev-parse", "HEAD"], cwd=args.core, text=True
-    ).strip()
-    key_path = (
-        Path(os.environ["LOCALAPPDATA"])
-        / "Minishop"
-        / "signing"
-        / "mini-throne-dev.dpapi"
-    )
-    key_path.parent.mkdir(parents=True, exist_ok=True)
-    if key_path.exists():
+    config = json.loads((ROOT / "release-config.json").read_text())
+    revision = config["coreRevision"]
+    version = json.loads((ROOT / "desktop/package.json").read_text())["version"]
+    key = os.environ.get("MINI_THRONE_PLUGIN_SIGNING_KEY")
+    if key:
+        private = Ed25519PrivateKey.from_private_bytes(
+            base64.b64decode(key, validate=True)
+        )
+    elif os.environ.get("CI"):
+        if os.environ.get("GITHUB_REF", "").startswith("refs/tags/"):
+            raise RuntimeError("Release signing key is required")
+        private = Ed25519PrivateKey.generate()
+    else:
+        key_path = (
+            Path(os.environ["LOCALAPPDATA"]) / "Minishop/signing/mini-throne-dev.dpapi"
+        )
         private = Ed25519PrivateKey.from_private_bytes(
             protect(key_path.read_bytes(), decrypt=True)
         )
-    else:
-        private = Ed25519PrivateKey.generate()
-        raw = private.private_bytes(
-            serialization.Encoding.Raw,
-            serialization.PrivateFormat.Raw,
-            serialization.NoEncryption(),
-        )
-        key_path.write_bytes(protect(raw))
     public = private.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
     )
@@ -83,13 +79,16 @@ def main() -> None:
                 and path.suffix not in {".pyc", ".pyo"}
             ):
                 files[path.relative_to(source).as_posix()] = path.read_bytes()
+    files["backend/mini_throne_plugin/release-policy.json"] = (
+        ROOT / "desktop/electron/update-config.json"
+    ).read_bytes()
     manifest = {
         "schema_version": 1,
         "id": "mini-throne",
         "name": "Mini Throne",
         "description": "Windows device authorization, branding and single-use installation packages",
-        "version": "0.1.0-alpha.2",
-        "publisher": "minishop-3252a8-dev",
+        "version": version,
+        "publisher": config["pluginPublisher"],
         "publisher_public_key": base64.b64encode(public).decode(),
         "publisher_fingerprint": hashlib.sha256(public).hexdigest(),
         "plugin_api": 1,
@@ -138,7 +137,7 @@ def main() -> None:
     target = (
         ROOT
         / "artifacts"
-        / f"mini-throne-plugin-0.1.0-alpha.2-{args.system}-{args.machine}-py{args.python}.zip"
+        / f"mini-throne-plugin-{version}-{args.system}-{args.machine}-py{args.python}.zip"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:

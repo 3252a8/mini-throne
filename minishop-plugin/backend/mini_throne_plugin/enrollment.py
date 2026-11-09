@@ -28,12 +28,18 @@ def installer_filename(origin: str, ticket: str) -> str:
 
 
 class EnrollmentApi:
-    def __init__(self, api) -> None:
+    def __init__(self, api, cache=None) -> None:
         self.api = api
+        self.cache = cache
         self.verification_lock = asyncio.Lock()
         self.verified_identity: tuple | None = None
 
-    def installer(self) -> tuple[Path, str]:
+    def installer(self, pinned: str | None = None) -> tuple[Path, str]:
+        if self.cache and not os.environ.get("MINI_THRONE_INSTALLER_PATH"):
+            try:
+                return self.cache.installer(pinned)
+            except ValueError:
+                raise fail("installer_unavailable", 503)
         filename = os.environ.get("MINI_THRONE_INSTALLER_PATH", "")
         expected = os.environ.get("MINI_THRONE_INSTALLER_SHA256", "").lower()
         if (
@@ -68,11 +74,11 @@ class EnrollmentApi:
             stat.st_ctime_ns,
         )
 
-    async def verified_installer(self) -> Path:
+    async def verified_installer(self, pinned: str | None = None) -> Path:
         # The operator mounts this artifact read-only. Hash once per artifact,
         # not once per user; replacement or digest changes invalidate the cache.
         async with self.verification_lock:
-            source, expected = self.installer()
+            source, expected = self.installer(pinned)
             identity = self.identity(source, expected)
             if identity != self.verified_identity:
 
@@ -99,16 +105,27 @@ class EnrollmentApi:
         return response(
             {
                 "available": available,
+                "version": (self.cache.current or {}).get("version")
+                if self.cache
+                else None,
                 "automatic_login": installer_filename(self.origin(), "a" * 43)
                 != GENERIC_FILENAME,
                 "ticket_ttl_seconds": TTL,
+                "release_status": "retrying"
+                if self.cache and self.cache.error
+                else "ready"
+                if available
+                else "preparing",
+                "panel_sync": self.cache.panel_status
+                if self.cache
+                else {"status": "disabled"},
             }
         )
 
     async def create(self, request: web.Request) -> web.Response:
         user_id = await self.api.browser_user(request, mutation=True)
         await self.api.limit(request, "enrollment", 12)
-        self.installer()
+        _, installer_digest = self.installer()
         ticket, delivery = secrets.token_urlsafe(32), secrets.token_hex(16)
         filename = installer_filename(self.origin(), ticket)
         automatic = filename != GENERIC_FILENAME
@@ -118,7 +135,13 @@ class EnrollmentApi:
                 pipe.set(self.api.key("enroll", digest(ticket)), str(user_id), ex=TTL)
             pipe.set(
                 self.api.key("delivery", delivery),
-                json.dumps({"user_id": user_id, "filename": filename}),
+                json.dumps(
+                    {
+                        "user_id": user_id,
+                        "filename": filename,
+                        "installer_digest": installer_digest,
+                    }
+                ),
                 ex=TTL,
             )
             await pipe.execute()
@@ -146,7 +169,7 @@ class EnrollmentApi:
         filename = entry.get("filename")
         if not isinstance(filename, str):
             raise fail("delivery_expired", 410)
-        source = await self.verified_installer()
+        source = await self.verified_installer(entry.get("installer_digest"))
         return web.FileResponse(
             source,
             headers={

@@ -116,7 +116,7 @@ async def body(request: web.Request) -> dict:
 
 class MiniThronePlugin(Plugin):
     name = "mini-throne"
-    version = "0.1.0-alpha.1"
+    version = "0.1.0"
     plugin_api_min_version = 1
     plugin_api_max_version = 1
 
@@ -128,7 +128,91 @@ class MiniThronePlugin(Plugin):
         api = DeviceApi(ctx)
         from .enrollment import EnrollmentApi
 
-        enrollment = EnrollmentApi(api)
+        from pathlib import Path
+        from bot.plugins.packages import package_root
+        from .releases import ReleaseCache
+        from .guides import sync_panel
+
+        policy = json.loads(
+            Path(__file__).with_name("release-policy.json").read_bytes()
+        )
+        directory = package_root().parent / "mini-throne"
+        cache = ReleaseCache(directory / "installers", policy)
+        enrollment = EnrollmentApi(api, cache)
+
+        async def maintain():
+            while True:
+                try:
+                    await cache.refresh()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    cache.error = True
+                if cache.current:
+                    try:
+                        cache.panel_status = await asyncio.wait_for(
+                            sync_panel(
+                                ctx.require_panel_service(), directory / "panel-backups"
+                            ),
+                            90,
+                        )
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        cache.panel_status = {
+                            "status": "unavailable"
+                        }  # Sign-in remains available.
+                await asyncio.sleep(3600 if cache.current else 60)
+
+        async def lifecycle(app):
+            task = asyncio.create_task(maintain(), name="mini-throne-releases")
+            yield
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        app.cleanup_ctx.append(lifecycle)
+
+        @web.middleware
+        async def windows_guide(request, handler):
+            result = await handler(request)
+            if (
+                request.path != "/api/subscription-guides"
+                or result.status != 200
+                or not isinstance(result, web.Response)
+                or result.content_type != "application/json"
+            ):
+                return result
+            from .guides import add_app, DOWNLOAD
+            from bot.app.web.webapp.guide_document import remnawave_v1_to_guide_document
+
+            payload = json.loads(result.text)
+            if not payload.get("enabled") or not isinstance(
+                payload.get("config"), dict
+            ):
+                return result
+            config, changed = add_app(payload["config"])
+            for item in config.get("platforms", {}).get("windows", {}).get("apps", []):
+                if item.get("name") == "Mini Throne":
+                    for block in item.get("blocks", []):
+                        for button in block.get("buttons", []):
+                            if button.get("link") == DOWNLOAD:
+                                button["link"] = (
+                                    api.public_url()
+                                    + "/extensions/mini-throne/connect?download=1"
+                                )
+                                changed = True
+            if changed:
+                payload["config"] = config
+                payload["guide_document"] = remnawave_v1_to_guide_document(
+                    config, source=str(payload.get("source") or "")
+                )
+                result.text = json.dumps(payload, ensure_ascii=False)
+            return result
+
+        app.middlewares.append(windows_guide)
         for method, path, handler in (
             ("GET", "/discovery", api.discovery),
             ("POST", "/device", api.start),

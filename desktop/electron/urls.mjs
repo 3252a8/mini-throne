@@ -15,3 +15,11 @@ export function parseDeepLink(value) {
   if(url.searchParams.getAll('instance').length!==1) throw new Error('Invalid link');
   return instanceOrigin(url.searchParams.get('instance'));
 }
+
+export function parseImportLink(value) {
+  if(typeof value!=='string'||value.length>8192||!value.startsWith('mini-throne://import/'))throw new Error('invalid_link');
+  const raw=value.slice('mini-throne://import/'.length);
+  const url=new URL(/^https?:/i.test(raw)?raw:decodeURIComponent(raw));
+  if(!['https:','http:'].includes(url.protocol)||url.username||url.password||!url.hostname)throw new Error('invalid_subscription');
+  return url.href;
+}

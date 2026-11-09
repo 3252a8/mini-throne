@@ -1,0 +1,19 @@
+# Reviewed false positives: official protocol fixtures, commit SHAs, PEM help text, shell variables and vendored SQLite identifiers.
+1ff7383595263d9b3854ebef7e960a3dc57910ea:desktop/scripts/fixtures/throne-api-v1.json:generic-api-key:7
+1ff7383595263d9b3854ebef7e960a3dc57910ea:desktop/scripts/fixtures/throne-api-v1.json:generic-api-key:97
+99f7ecd1e7175d0b7073333b3f4e9fc2137b918e:.github/workflows/build.yml:generic-api-key:20
+2288823523af0be831694601e35e4eba43b784d5:res/translations/zh_CN.ts:private-key:13851
+2288823523af0be831694601e35e4eba43b784d5:res/translations/zh_CN.ts:private-key:14787
+2288823523af0be831694601e35e4eba43b784d5:res/translations/zh_CN.ts:private-key:14795
+c99415c4918670351db8e6c8e8f3fae2a850c326:.github/workflows/build.yml:generic-api-key:15
+dc4c7d117f30f3c68c18ef9c0dc58bd9c1bab7b6:.github/workflows/build.yml:generic-api-key:15
+725db1e626d179a7777a163a448fc41bd84389e4:.github/workflows/build.yml:generic-api-key:14
+cb26b89e0561ce3a562ba839e3f9aeb1bef00742:res/translations/ru_RU.ts:private-key:12499
+725db1e626d179a7777a163a448fc41bd84389e4:script/ci/e2e/macos_launchd.sh:generic-api-key:61
+cb26b89e0561ce3a562ba839e3f9aeb1bef00742:res/translations/ru_RU.ts:private-key:13327
+cb26b89e0561ce3a562ba839e3f9aeb1bef00742:res/translations/ru_RU.ts:private-key:13335
+a8af8ca87af6a32e342beeb1f6ca73f98ee5e7a1:src/configs/outbounds/ssh.cpp:private-key:70
+00317280aa17fc2d83979388114427921cc50d1e:3rdparty/SQLiteCpp/src/sqlite3.c:generic-api-key:137809
+00317280aa17fc2d83979388114427921cc50d1e:3rdparty/SQLiteCpp/src/sqlite3.c:generic-api-key:137965
+00317280aa17fc2d83979388114427921cc50d1e:3rdparty/SQLiteCpp/src/sqlite3.c:generic-api-key:138057
+00317280aa17fc2d83979388114427921cc50d1e:3rdparty/SQLiteCpp/src/sqlite3.c:generic-api-key:251523

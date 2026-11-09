@@ -1,0 +1,138 @@
+name: Mini Throne
+on:
+  push:
+    branches: [dev]
+    tags: ['v*']
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mini-throne-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@101b3474143230c3562bd21f0b3c3f8254784571
+        with:
+          node-version: '24.22.2'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - run: node scripts/prepare-runtime.mjs
+        working-directory: desktop
+      - run: npm run check
+        working-directory: desktop
+      - run: npm run build
+        working-directory: desktop
+      - run: npm run check:runtime
+        working-directory: desktop
+      - run: node scripts/check-release.mjs
+        working-directory: desktop
+      - run: npx electron-builder --win nsis --x64 --publish never --config.electronDist=node_modules/electron/dist
+        working-directory: desktop
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows
+          path: |
+            artifacts/Mini-Throne-Setup-x64.exe
+            artifacts/Mini-Throne-Setup-x64.exe.blockmap
+          if-no-files-found: error
+          retention-days: 7
+  plugin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          repository: 3252a8/remnawave-minishop
+          ref: 67357d3cfad4a430bfd66fbb507ddad390e5eb73
+          path: .core
+          persist-credentials: false
+      - run: python -m pip install -r scripts/requirements-ci.txt
+      - run: python scripts/check-plugin.py
+        env:
+          CORE_SOURCE: .core
+      - name: Require a release from dev
+        if: startsWith(github.ref, 'refs/tags/')
+        run: git merge-base --is-ancestor HEAD origin/dev
+      - name: Package plugin
+        run: python scripts/build-minishop-plugin.py
+        env:
+          MINI_THRONE_PLUGIN_SIGNING_KEY: ${{ startsWith(github.ref, 'refs/tags/') && secrets.MINI_THRONE_PLUGIN_SIGNING_KEY || '' }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: plugin
+          path: artifacts/mini-throne-plugin-*.zip
+          if-no-files-found: error
+          retention-days: 7
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [windows, plugin, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r scripts/requirements-ci.txt
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Archive corresponding sources
+        run: git archive --format=zip --output="artifacts/mini-throne-source-${GITHUB_REF_NAME#v}.zip" HEAD
+      - name: Sign release metadata
+        run: python scripts/sign-release.py
+        env:
+          MINI_THRONE_RELEASE_SIGNING_KEY: ${{ secrets.MINI_THRONE_RELEASE_SIGNING_KEY }}
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag --draft --title "Mini Throne ${GITHUB_REF_NAME#v}" --notes-file docs/release-notes.md
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+      - name: Publish repository installer and mirror release
+        run: python scripts/publish-plugin-index.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINI_THRONE_GITLAB_TOKEN: ${{ secrets.MINI_THRONE_GITLAB_TOKEN }}
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan complete history and current files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          gh release download v8.30.1 -R gitleaks/gitleaks -p gitleaks_8.30.1_linux_x64.tar.gz -D "$RUNNER_TEMP/gitleaks"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks/gitleaks_8.30.1_linux_x64.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks/gitleaks_8.30.1_linux_x64.tar.gz" -C "$RUNNER_TEMP/gitleaks"
+          "$RUNNER_TEMP/gitleaks/gitleaks" git --redact --no-banner --log-opts=--all
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/gitleaks" --wildcards 'desktop/*' 'minishop-plugin/*' 'scripts/*' '.github/workflows/*'
+          "$RUNNER_TEMP/gitleaks/gitleaks" dir --redact --no-banner "$RUNNER_TEMP/gitleaks/desktop/electron"
+          "$RUNNER_TEMP/gitleaks/gitleaks" dir --redact --no-banner "$RUNNER_TEMP/gitleaks/minishop-plugin"

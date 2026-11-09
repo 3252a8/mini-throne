@@ -1,7 +1,7 @@
 {
   "name": "mini-throne",
   "productName": "Mini Throne",
-  "version": "0.1.0-alpha.5",
+  "version": "0.1.0",
   "description": "A simple Windows client for Minishop, powered by Throne",
   "author": "3252a8",
   "license": "GPL-3.0-only",
@@ -86,7 +86,7 @@
     "win": {
       "target": "nsis",
       "icon": "assets/icon.ico",
-      "artifactName": "Mini-Throne-Setup-${version}-${arch}.${ext}"
+      "artifactName": "Mini-Throne-Setup-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": true,
@@ -95,6 +95,10 @@
       "createDesktopShortcut": true,
       "deleteAppDataOnUninstall": false,
       "include": "native/installer.nsh"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/3252a8/mini-throne/releases/latest/download/"
     }
   }
 }

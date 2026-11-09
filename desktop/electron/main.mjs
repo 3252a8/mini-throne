@@ -6,7 +6,7 @@ import {Engine} from './engine.mjs';
 import {readNativeModes} from './native-settings.mjs';
 import {Account} from './account.mjs';
 import {download,api} from './http.mjs';
-import {parseDeepLink} from './urls.mjs';
+import {parseDeepLink,parseImportLink} from './urls.mjs';
 import {consumeEnrollment} from './enrollment.mjs';
 import {updates} from './updates.mjs';
 
@@ -122,7 +122,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       state.ready=true;state.error=null;return true;
     }finally{nativeTransition=false;}
   }
-  function link(value){try{state.suggestedOrigin=parseDeepLink(value);window?.show();window?.focus();publish();}catch{state.error='invalid_link';publish();}}
+  function link(value){try{if(value.startsWith('mini-throne://import/')){state.suggestedImport={url:parseImportLink(value),id:Date.now()};}else{state.suggestedOrigin=parseDeepLink(value);}window?.show();window?.focus();publish();}catch{state.error='invalid_link';publish();}}
   app.on('second-instance',(_event,args)=>{const url=args.find(arg=>arg.startsWith('mini-throne:'));if(url)link(url);else{window?.show();window?.focus();}});
   app.on('open-url',(event,url)=>{event.preventDefault();link(url);});
   function handle(channel,callback){ipcMain.handle(channel,(event,...args)=>{if(event.sender!==window.webContents||event.senderFrame!==window.webContents.mainFrame)throw new Error('untrusted_sender');return callback(...args);});}
@@ -217,7 +217,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       if(state.sourceId===-1)await refresh();else await loadManual();
       if(privateConfig.tun){try{capabilities(await engine.setTun(true));}catch(error){state.error=error.code||'needs_privileges';}}
     });
-    updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;await shutdown();},isConnected:()=>state.connected||state.busy});
+    updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;await shutdown();},isConnected:()=>state.connected||state.busy||state.advanced});
     const initialLink=process.argv.find(arg=>arg.startsWith('mini-throne:'));if(initialLink)link(initialLink);
     setInterval(async()=>{if(polling||state.busy||state.advanced||!state.ready||quitting)return;polling=true;try{const status=await engine.status();if(state.advanced||state.busy)return;capabilities(status);state.connected=status.state==='running';if(!state.connected)await engine.disableProxy();if(status.profile)state.selected=status.profile.id;publish();}catch{if(!state.advanced&&!state.busy){state.connected=false;state.error='engine_unavailable';publish();}}finally{polling=false;}},2500).unref();
     setInterval(()=>{if(state.sources.length&&!state.busy&&!state.advanced)void operation(refresh);},3600000).unref();

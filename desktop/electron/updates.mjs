@@ -1,29 +1,48 @@
 import fs from 'node:fs/promises';
+import {createReadStream} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
+import {fetchRelease} from './release-manifest.mjs';
 const require=createRequire(import.meta.url);
 
 export async function updates({app,onState,beforeInstall,isConnected}) {
-  let config;try{config=JSON.parse(await fs.readFile(new URL('./update-config.json',import.meta.url),'utf8'));}catch{}
-  // A private repository is not a downloadable update feed. Test builds never
-  // embed a forge credential or accept an executable URL from a service instance.
-  if(!app.isPackaged||!config?.url||!config?.publisherName){onState({status:'unconfigured'});return {check:async()=>{},install:async()=>{}};}
-  const feed=new URL(config.url);
-  if(feed.protocol!=='https:'||feed.username||feed.password)throw new Error('invalid_update_feed');
+  if(!app.isPackaged){onState({status:'unconfigured'});return {check:async()=>{},install:async()=>{}};}
+  const policy=JSON.parse(await fs.readFile(new URL('./update-config.json',import.meta.url),'utf8'));
   const {autoUpdater}=require('electron-updater');
-  const installed=await autoUpdater.configOnDisk.value;
-  const publishers=Array.isArray(installed.publisherName)?installed.publisherName:[installed.publisherName];
-  if(!publishers.includes(config.publisherName))throw new Error('update_publisher_not_pinned');
-  autoUpdater.setFeedURL({provider:'generic',url:feed.href});
-  autoUpdater.autoDownload=true;autoUpdater.autoInstallOnAppQuit=false;autoUpdater.allowDowngrade=false;
-  autoUpdater.allowPrerelease=true;autoUpdater.disableWebInstaller=true;
-  // electron-updater requires app-update.yml's publisherName for Authenticode.
-  let ready=false;
-  autoUpdater.on('checking-for-update',()=>onState({status:'checking'}));
-  autoUpdater.on('download-progress',progress=>onState({status:'downloading',percent:Math.round(progress.percent)}));
-  autoUpdater.on('update-not-available',()=>onState({status:'current'}));
+  const semver=require('semver');
+  autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
+  autoUpdater.allowDowngrade=false;autoUpdater.allowPrerelease=false;autoUpdater.disableWebInstaller=true;
+  // Ed25519 authenticates the exact executable hash before download. Authenticode
+  // can additionally be enabled by the operator; its check is not bypassed here.
+  autoUpdater.logger=null;
+  let ready=null,checking=false,installing=false;
+  autoUpdater.on('download-progress',p=>onState({status:'downloading',percent:Math.round(p.percent)}));
   autoUpdater.on('error',()=>onState({status:'error'}));
-  async function install(){if(!ready)return;await beforeInstall();autoUpdater.quitAndInstall(true,true);}
-  autoUpdater.on('update-downloaded',()=>{ready=true;onState({status:'ready'});if(!isConnected())void install();});
-  async function check(){try{await autoUpdater.checkForUpdates();}catch{onState({status:'error'});}}
+  async function verifyFile(file,expected){
+    const stat=await fs.stat(file);if(stat.size!==expected.size)throw new Error('update_size_mismatch');
+    const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);
+    if(hash.digest('hex')!==expected.sha256)throw new Error('update_digest_mismatch');
+  }
+  async function install(){
+    if(!ready||installing)return;installing=true;
+    try{await verifyFile(ready.file,ready.expected);await beforeInstall();autoUpdater.quitAndInstall(true,true);}
+    catch{installing=false;onState({status:'error'});}
+  }
+  async function check(){
+    if(checking||ready)return;checking=true;onState({status:'checking'});
+    try{
+      const release=await fetchRelease(policy);
+      if(!semver.gt(release.version,app.getVersion())){onState({status:'current'});return;}
+      const expected=release.files['Mini-Throne-Setup-x64.exe'];
+      autoUpdater.setFeedURL({provider:'generic',url:`https://github.com/${policy.repository}/releases/download/v${release.version}/`,channel:'latest',useMultipleRangeRequest:false});
+      const result=await autoUpdater.checkForUpdates();
+      const info=result?.updateInfo,file=info?.files?.[0];
+      if(info?.version!==release.version||info.files.length!==1||file.url!=='Mini-Throne-Setup-x64.exe'||file.sha512!==expected.sha512||file.size!==expected.size||info.packages)throw new Error('update_metadata_mismatch');
+      const downloaded=await autoUpdater.downloadUpdate();
+      if(downloaded.length!==1)throw new Error('unexpected_update_files');
+      await verifyFile(downloaded[0],expected);ready={file:downloaded[0],expected};onState({status:'ready'});
+      if(!isConnected())await install();
+    }catch{onState({status:'error'});}finally{checking=false;}
+  }
   void check();return {check,install};
 }
