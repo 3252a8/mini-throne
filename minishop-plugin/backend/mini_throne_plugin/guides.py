@@ -26,6 +26,8 @@ def add_app(config: dict) -> tuple[dict, bool]:
     apps.append(
         {
             "name": "Mini Throne",
+            "featured": False,
+            "svgIconKey": windows.get("svgIconKey", "Windows"),
             "blocks": [
                 {
                     "title": label("Установите Mini Throne", "Install Mini Throne"),

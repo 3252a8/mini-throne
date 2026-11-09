@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {net} from 'electron';
 import {createReadStream} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
@@ -31,7 +32,7 @@ export async function updates({app,onState,beforeInstall,isConnected}) {
   async function check(){
     if(checking||ready)return;checking=true;onState({status:'checking'});
     try{
-      const release=await fetchRelease(policy);
+      const release=await fetchRelease(policy,net.fetch);
       if(!semver.gt(release.version,app.getVersion())){onState({status:'current'});return;}
       const expected=release.files['Mini-Throne-Setup-x64.exe'];
       autoUpdater.setFeedURL({provider:'generic',url:`https://github.com/${policy.repository}/releases/download/v${release.version}/`,channel:'latest',useMultipleRangeRequest:false});

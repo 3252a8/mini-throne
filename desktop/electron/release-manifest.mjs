@@ -12,8 +12,8 @@ export function verifyRelease(envelope,policy) {
   return data;
 }
 
-export async function fetchRelease(policy) {
-  const response=await fetch(`https://github.com/${policy.repository}/releases/latest/download/release-manifest.json`,{signal:AbortSignal.timeout(20000),headers:{'Cache-Control':'no-cache'}});
+export async function fetchRelease(policy,fetcher=globalThis.fetch) {
+  const response=await fetcher(`https://github.com/${policy.repository}/releases/latest/download/release-manifest.json`,{signal:AbortSignal.timeout(20000),headers:{'Cache-Control':'no-cache'}});
   if(!response.ok)throw new Error('release_unavailable');
   const chunks=[];let size=0;
   for await(const chunk of response.body){size+=chunk.length;if(size>49152)throw new Error('release_too_large');chunks.push(chunk);}

@@ -1,7 +1,7 @@
 # Mini Throne
 
 Простой Windows-клиент для совместимых инстансов Minishop, на основе Throne.
-**0.1.0 — первая публичная версия для тестирования.**
+**0.1.1 — публичная версия для тестирования.**
 
 [Скачать EXE для Windows](https://github.com/3252a8/mini-throne/releases/latest/download/Mini-Throne-Setup-x64.exe) · [Релизы и плагин](https://github.com/3252a8/mini-throne/releases/latest)
 
