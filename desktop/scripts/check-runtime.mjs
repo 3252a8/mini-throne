@@ -39,6 +39,11 @@ try{
   const status=await engine.start();
   assert.ok(status.core);
   assert.equal(status.state,'idle');
+  assert.equal((await engine.setTun(false)).tun,false);
+  if(!status.capabilities?.tun){
+    await assert.rejects(engine.setTun(true),error=>error.code==='needs_privileges');
+    assert.equal((await engine.status()).tun,false);
+  }
   const listen=async handler=>{
     const server=http.createServer(handler);servers.push(server);
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -79,7 +84,7 @@ try{
   assert.equal((await engine.profiles(manual)).length,links.length);
   assert.equal((await engine.profiles(subscription))[0].name,'Subscription 2');
   await engine.call('DELETE',`/v1/groups/${manual}`);await engine.call('DELETE',`/v1/groups/${subscription}`);
-  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,manualProfiles:links.length,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
+  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,tunDisabled:true,tunPrivilegeRefusal:!status.capabilities?.tun,manualProfiles:links.length,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
 }catch(error){code=1;console.error(error);}finally{
   if(engine){
     await engine.shutdown();

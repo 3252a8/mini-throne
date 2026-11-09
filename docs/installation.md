@@ -2,7 +2,7 @@
 
 ## Windows
 
-Запустите `artifacts/Mini-Throne-Setup-0.1.0-alpha.3-x64.exe`. EXE пока без
+Запустите `artifacts/Mini-Throne-Setup-0.1.0-alpha.4-x64.exe`. EXE пока без
 сертификата Authenticode. Он устанавливается для текущего пользователя и регистрирует
 `mini-throne`. Данные: `%APPDATA%\Mini Throne`; обычный Throne не изменяется.
 
@@ -50,7 +50,7 @@ services:
     volumes:
       - ./client-artifacts:/opt/mini-throne:ro
     environment:
-      MINI_THRONE_INSTALLER_PATH: /opt/mini-throne/Mini-Throne-Setup-0.1.0-alpha.3-x64.exe
+      MINI_THRONE_INSTALLER_PATH: /opt/mini-throne/Mini-Throne-Setup-0.1.0-alpha.4-x64.exe
       MINI_THRONE_INSTALLER_SHA256: "<SHA-256 из artifacts/SHA256SUMS.txt>"
 ```
 

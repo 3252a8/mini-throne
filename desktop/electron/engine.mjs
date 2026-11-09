@@ -64,6 +64,7 @@ export class Engine {
   }
   call(method,path,body,query) {if(!this.connection)throw new Error('engine_unavailable');return request(this.connection,method,path,body,query);}
   status(){return this.call('GET','/v1/status');}
+  setTun(enabled){return this.call('PUT','/v1/modes',{tun:enabled,timeout:60});}
   async profiles(group) {const result=await this.call('GET','/v1/profiles',undefined,{group:String(group)});return result.profiles;}
   async addSource({kind,name,text}) {
     if(!['subscription','servers'].includes(kind)||typeof text!=='string'||!text.trim()||Buffer.byteLength(text)>262144||typeof name!=='string'||name.length>80)throw new Error('invalid_import');
@@ -92,11 +93,13 @@ export class Engine {
     if(Number.isInteger(oldGroup)&&oldGroup!==id)await this.call('DELETE',`/v1/groups/${oldGroup}`);
     return id;
   }
-  async connect(id,systemProxy=true) {
+  async connect(id,systemProxy=true,tun=false) {
+    const before=await this.status();
+    if(before.tun!==tun)await this.setTun(tun);
     let status=await this.call('PUT','/v1/connection',{profile:id,timeout:60});
     for(let attempt=0;status.state==='connecting'&&attempt<30;attempt++){await delay(1000);status=await this.status();}
     if(status.state!=='running'||status.profile?.id!==id){await this.call('DELETE','/v1/connection').catch(()=>{});throw new Error('connection_pending');}
-    if(systemProxy) {
+    if(systemProxy&&!tun) {
       try {await this.enableProxy(status.inbound.port);}catch(error){await this.call('DELETE','/v1/connection').catch(()=>{});throw error;}
     }
     return status;
