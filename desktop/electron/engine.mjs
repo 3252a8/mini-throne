@@ -3,10 +3,11 @@ import {promisify} from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import net from 'node:net';
-import {createHash} from 'node:crypto';
+import {createHash,randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {request} from './throne-api.mjs';
+import {prepareNativeApi} from './native-settings.mjs';
 
 export const RUSSIA_ROUTE = {
   name:'Mini Throne · Bypass Russia · Offline',kind:'raw',default_outbound:-1,prevent_modifications:false
@@ -19,7 +20,9 @@ export async function freePort() {
 }
 export class Engine {
   constructor({runtime,data,guard,onExit,ruleDirectory=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../assets/rules')}) {Object.assign(this,{runtime,data,guard,onExit,ruleDirectory});this.connection=null;this.child=null;this.proxy=null;}
-  async start() {
+  async start({native=false}={}) {
+    if(this.child&&this.child.exitCode===null)throw new Error('engine_already_running');
+    this.native=native;
     await fs.mkdir(this.data,{recursive:true});
     await promisify(execFile)(this.guard,['--recover',path.join(this.data,'proxy-backup.json')],{windowsHide:true,timeout:5000});
     const manifest=JSON.parse(await fs.readFile(path.join(this.ruleDirectory,'manifest.json'),'utf8'));
@@ -32,34 +35,45 @@ export class Engine {
       rule_set:['geoip-ru','geosite-category-ru'].map(tag=>({type:'local',tag,format:'binary',path:path.join(this.ruleDirectory,`${tag}.srs`)})),final:-1
     })};
     const port=await freePort();
-    this.child=spawn(path.join(this.runtime,'Throne.exe'),['--headless','--no-resume','--data-dir',this.data,'--api-listen',`127.0.0.1:${port}`],{cwd:this.runtime,windowsHide:true,stdio:'ignore'});
-    this.watcher=spawn(this.guard,['--watch',String(process.pid),String(this.child.pid)],{windowsHide:true,stdio:'ignore'});
+    const keyPath=path.join(this.data,'config/api.key');
+    await fs.mkdir(path.dirname(keyPath),{recursive:true});
+    try{await fs.writeFile(keyPath,randomBytes(32).toString('base64url'),{flag:'wx',mode:0o600});}catch(error){if(error.code!=='EEXIST')throw error;}
+    const key=Buffer.from((await fs.readFile(keyPath,'utf8')).trim(),'base64url');
+    if(key.length!==32)throw new Error('invalid_engine_key');
+    if(native)prepareNativeApi(this.data,port,key);
+    const args=native?['-appdata',this.data]:['--headless','--no-resume','--data-dir',this.data,'--api-listen',`127.0.0.1:${port}`,'--api-key-file',keyPath];
+    this.child=spawn(path.join(this.runtime,'Throne.exe'),args,{cwd:this.runtime,windowsHide:!native,stdio:'ignore'});
+    if(!native)this.watcher=spawn(this.guard,['--watch',String(process.pid),String(this.child.pid)],{windowsHide:true,stdio:'ignore'});
     let startError;
     this.child.once('error',error=>{startError=error;});
-    this.watcher.once('error',error=>{startError=error;this.child.kill();});
-    this.child.once('exit',()=>{this.connection=null;void this.disableProxy();this.onExit?.();});
+    if(!native)this.watcher.once('error',error=>{startError=error;this.child.kill();});
+    this.child.once('exit',()=>{this.connection=null;void this.disableProxy();this.onExit?.({native});});
     for(let attempt=0;attempt<100;attempt++) {
       if(startError)throw startError;
       if(this.child.exitCode!==null)throw new Error('engine_start_failed');
       try {
-        const key=Buffer.from((await fs.readFile(path.join(this.data,'config/api.key'),'utf8')).trim(),'base64url');
         const connection={port,key};
         const status=await request(connection,'GET','/v1/status',undefined,undefined,1000);
-        if(status.core) {this.connection=connection;break;}
+        if(status.core||native) {this.connection=connection;break;}
       } catch {}
       await delay(200);
     }
     if(!this.connection)throw new Error('engine_start_failed');
+    if(native)return this.status();
+    const marker=path.join(this.data,'mini-defaults.json');
+    let initialized=false;try{initialized=JSON.parse(await fs.readFile(marker,'utf8')).version===1;}catch{}
     // Avoid collisions with other clients, including Throne's default DNS/API ports.
-    const ports=new Set();while(ports.size<3)ports.add(await freePort());
-    const [inbound,dns,api]=[...ports];
-    await this.call('PUT','/v1/settings',{settings:{inbound_enabled:true,inbound_address:'127.0.0.1',inbound_port:inbound,dns_in_port:dns,clash_api_port:0,singbox_api_port:api,sub_auto_update:60,sub_respect_server_interval:true,log_level:'warn',remember_enable:false}});
+    if(!initialized){
+      const ports=new Set();while(ports.size<3)ports.add(await freePort());
+      const [inbound,dns,api]=[...ports];
+      await this.call('PUT','/v1/settings',{settings:{inbound_enabled:true,inbound_address:'127.0.0.1',inbound_port:inbound,dns_in_port:dns,clash_api_port:0,singbox_api_port:api,sub_auto_update:60,sub_respect_server_interval:true,log_level:'warn',remember_enable:false}});
+    }
     await this.call('PUT','/v1/modes',{tun:false});
     const {routes}=await this.call('GET','/v1/routes');
     const found=routes.find(route=>route.name===RUSSIA_ROUTE.name);
-    const {route}=found?await this.call('PUT',`/v1/routes/${found.id}`,routeConfig):await this.call('POST','/v1/routes',routeConfig);
-    this.routeId=route.id;
-    await this.call('PUT','/v1/routes/active',{id:route.id});
+    const route=found||(!initialized?(await this.call('POST','/v1/routes',routeConfig)).route:null);
+    this.routeId=route?.id??null;
+    if(!initialized){await this.call('PUT','/v1/routes/active',{id:route.id});await fs.writeFile(marker,JSON.stringify({version:1}));}
     return this.status();
   }
   call(method,path,body,query) {if(!this.connection)throw new Error('engine_unavailable');return request(this.connection,method,path,body,query);}
@@ -76,7 +90,7 @@ export class Engine {
     }
     const links=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
     if(links.length>200||links.some(link=>!/^[-a-z0-9+]+:\/\//i.test(link)||/^(file|javascript|data):/i.test(link)))throw new Error('invalid_import');
-    const {group}=await this.call('POST','/v1/groups',{name:name||'Servers',route_id:this.routeId});
+    const {group}=await this.call('POST','/v1/groups',{name:name||'Servers',route_id:-1});
     try{
       const result=await this.call('POST','/v1/import',{as:'profiles',text:links.join('\n'),group:group.id,timeout:60});
       if(!result.imported||result.failed)throw new Error('invalid_import');
@@ -84,7 +98,7 @@ export class Engine {
     }catch(error){await this.call('DELETE',`/v1/groups/${group.id}`).catch(()=>{});throw error;}
   }
   async replaceSubscription({name,url},oldGroup) {
-    const result=await this.call('POST','/v1/groups',{name,url,auto_update:true,update:true,route_id:this.routeId,import_route:false,timeout:60});
+    const result=await this.call('POST','/v1/groups',{name,url,auto_update:true,update:true,route_id:-1,import_route:false,timeout:60});
     const id=result.group.id;
     if(result.update?.ok===false || !(await this.profiles(id)).length) {
       await this.call('DELETE',`/v1/groups/${id}`).catch(()=>{});
@@ -124,5 +138,11 @@ export class Engine {
     await new Promise(resolve=>{child.once('exit',resolve);child.stdin.end();});
   }
   async disconnect(){await this.disableProxy();return this.call('DELETE','/v1/connection',{timeout:30});}
-  async shutdown(){await this.disableProxy();if(this.connection)await this.call('POST','/v1/shutdown',{}).catch(()=>this.child?.kill());else this.child?.kill();}
+  async shutdown(){
+    await this.disableProxy();
+    const child=this.child;if(!child||child.exitCode!==null)return;
+    if(this.connection){try{await this.call('POST','/v1/shutdown',{});}catch(error){if(this.native)throw error;child.kill();}}
+    else if(this.native)throw new Error('native_window_open');else child.kill();
+    if(child.exitCode===null)await new Promise((resolve,reject)=>{const timer=setTimeout(()=>{child.off('exit',done);reject(new Error('native_window_open'));},15000);const done=()=>{clearTimeout(timer);resolve();};child.once('exit',done);});
+  }
 }

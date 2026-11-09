@@ -7,7 +7,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {deriveKeys,seal,open} from '../electron/throne-api.mjs';
-import {Engine} from '../electron/engine.mjs';
+import {Engine,RUSSIA_ROUTE} from '../electron/engine.mjs';
 
 async function checkRuntime(){
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -80,11 +80,22 @@ try{
   assert.equal((await engine.call('GET','/v1/groups')).groups.length,before);
   await engine.shutdown();
   if(engine.child.exitCode===null)await new Promise(resolve=>engine.child.once('exit',resolve));
+  const native=await engine.start({native:true});
+  assert.equal(native.capabilities.headless,false);
+  assert.equal((await engine.profiles(manual)).length,links.length);
+  await engine.call('PUT','/v1/settings',{settings:{log_level:'error'}});
+  await engine.call('PUT',`/v1/routes/${engine.routeId}`,{name:'Edited bypass'});
+  const {route:customRoute}=await engine.call('POST','/v1/routes',{name:'Native route',kind:'raw',raw_route:JSON.stringify({rules:[],final:-1})});
+  await engine.call('PUT','/v1/routes/active',{id:customRoute.id});
+  await engine.shutdown();
   await engine.start();
+  assert.equal((await engine.call('GET','/v1/settings')).settings.log_level,'error');
+  assert.equal((await engine.status()).route.id,customRoute.id);
+  assert.equal((await engine.call('GET','/v1/routes')).routes.some(route=>route.name===RUSSIA_ROUTE.name),false);
   assert.equal((await engine.profiles(manual)).length,links.length);
   assert.equal((await engine.profiles(subscription))[0].name,'Subscription 2');
   await engine.call('DELETE',`/v1/groups/${manual}`);await engine.call('DELETE',`/v1/groups/${subscription}`);
-  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,tunDisabled:true,tunPrivilegeRefusal:!status.capabilities?.tun,manualProfiles:links.length,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
+  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,nativeGui:true,nativeSettingsPersisted:true,nativeRoutePreserved:true,tunDisabled:true,tunPrivilegeRefusal:!status.capabilities?.tun,manualProfiles:links.length,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
 }catch(error){code=1;console.error(error);}finally{
   if(engine){
     await engine.shutdown();
