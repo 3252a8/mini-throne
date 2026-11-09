@@ -5,7 +5,8 @@ import {fileURLToPath} from 'node:url';
 import {Engine} from './engine.mjs';
 import {Account} from './account.mjs';
 import {download,api} from './http.mjs';
-import {parseDeepLink,instanceOrigin} from './urls.mjs';
+import {parseDeepLink} from './urls.mjs';
+import {consumeEnrollment} from './enrollment.mjs';
 import {updates} from './updates.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -107,19 +108,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     engine=new Engine({ruleDirectory:app.isPackaged?path.join(process.resourcesPath,'rules'):path.join(here,'../assets/rules'),runtime:app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(here,'../runtime'),data:path.join(directory,'engine'),guard:app.isPackaged?path.join(process.resourcesPath,'ProxyGuard.exe'):path.join(here,'../native/bin/ProxyGuard.exe'),onExit:()=>{state.connected=false;if(!quitting)state.error='engine_stopped';publish();}});
     await operation(async()=>{
       await engine.start();state.ready=true;
-      const pending=path.join(directory,'pending-enrollment.json');
-      try{
-        const stat=await fs.stat(pending);
-        if(stat.size>8192)throw new Error('invalid_enrollment');
-        const enrollment=JSON.parse(await fs.readFile(pending,'utf8'));
-        if(!account.value){
-          const origin=instanceOrigin(enrollment.origin);
-          if(enrollment.protocol!==1||!Number.isFinite(enrollment.expires_at)||Date.now()>enrollment.expires_at*1000)throw new Error('enrollment_expired');
-          const {data}=await api(origin,'/api/plugins/mini-throne/v1/enroll/redeem',{method:'POST',body:{ticket:enrollment.ticket}});
-          account.setTokens(origin,data);await account.save();
-        }
-        await fs.rm(pending,{force:true});
-      }catch(error){if(error.code!=='ENOENT'){await fs.rm(pending,{force:true});state.error='enrollment_failed';}}
+      try{await consumeEnrollment({directory,account,request:api});}
+      catch{state.error='enrollment_failed';}
       if(account.value)await refresh();
     });
     updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;await shutdown();},isConnected:()=>state.connected||state.busy});

@@ -88,7 +88,7 @@ def main() -> None:
         "id": "mini-throne",
         "name": "Mini Throne",
         "description": "Windows device authorization, branding and single-use installation packages",
-        "version": "0.1.0-alpha.1",
+        "version": "0.1.0-alpha.2",
         "publisher": "minishop-3252a8-dev",
         "publisher_public_key": base64.b64encode(public).decode(),
         "publisher_fingerprint": hashlib.sha256(public).hexdigest(),
@@ -138,7 +138,7 @@ def main() -> None:
     target = (
         ROOT
         / "artifacts"
-        / f"mini-throne-plugin-0.1.0-alpha.1-{args.system}-{args.machine}-py{args.python}.zip"
+        / f"mini-throne-plugin-0.1.0-alpha.2-{args.system}-{args.machine}-py{args.python}.zip"
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
