@@ -15,4 +15,7 @@
   Pop $1
   Pop $0
   mini_throne_enroll_done:
+  ; Shell links can be unavailable while Windows refreshes them after an update.
+  ; Launch the installed executable directly; preserve the standard user token.
+  StrCpy $launchLink "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
 !macroend
