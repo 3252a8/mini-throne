@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
   "artifact": "packages/mini-throne.zip",
-  "sha256": "37ef9f3442f0a35c327920bf347ffc9675c85dece1ceccb722aa82423721fa24",
-  "version": "0.1.4"
+  "sha256": "6488ba86d39170e9e8d3154491698ae5ff6644694d663077c1e8bb58029ae2da",
+  "version": "0.1.5"
 }
