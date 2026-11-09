@@ -4,6 +4,7 @@ import {verifyRelease} from '../electron/release-manifest.mjs';
 import {parseImportLink,parseDeepLink} from '../electron/urls.mjs';
 import {normalizeBranding} from '../electron/branding.mjs';
 import {jsonProfiles,preferredSubscription} from '../electron/subscription.mjs';
+import {renewalUrl} from '../electron/service-links.mjs';
 
 const {privateKey,publicKey}=generateKeyPairSync('ed25519');
 const policy={repository:'3252a8/mini-throne',publicKey:publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('base64')};
@@ -28,3 +29,6 @@ const choice=await preferredSubscription('https://example.com/sub?key=synthetic'
 assert.equal(choice.fullXray,true);assert.equal(choice.url,'https://example.com/sub/json?key=synthetic');
 assert.deepEqual(await preferredSubscription('https://example.com/sub',async()=>({status:200,bytes:Buffer.from('<html>not a subscription</html>')})),{url:'https://example.com/sub',fullXray:false});
 console.log('Theme validation, fallback branding, complete JSON preservation and format negotiation: passed');
+assert.equal(renewalUrl('https://example.com'), 'https://example.com/?renew=1');
+for(const origin of ['http://example.com','javascript:alert(1)','https://user:password@example.com'])assert.throws(()=>renewalUrl(origin));
+console.log('Direct renewal checkout and unsafe-origin rejection: passed');

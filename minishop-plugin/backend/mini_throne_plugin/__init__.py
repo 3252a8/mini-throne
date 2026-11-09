@@ -116,7 +116,7 @@ async def body(request: web.Request) -> dict:
 
 class MiniThronePlugin(Plugin):
     name = "mini-throne"
-    version = "0.1.3"
+    version = "0.1.4"
     plugin_api_min_version = 1
     plugin_api_max_version = 1
 
@@ -537,7 +537,7 @@ class DeviceApi:
 
         theme = branding_theme(settings)
         # The client only accepts raster images through the same-origin asset URL.
-        logo = _resolve_webapp_logo_url(settings) if settings.WEBAPP_LOGO_URL else None
+        logo = _resolve_webapp_logo_url(settings)
         return response(
             {
                 "protocol": 1,

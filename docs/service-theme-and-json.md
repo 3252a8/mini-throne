@@ -41,3 +41,15 @@ profile, retained routing, and successful HTTPS traffic through the automatic pr
 References: [Remnawave response rules](https://docs.rw/learn-en/routing-rules/),
 [Throne](https://github.com/throneproj/Throne),
 [Twemoji Country Flags](https://github.com/talkjs/country-flag-emoji-polyfill).
+
+## Connection and update interface (0.1.4)
+
+The subscription card is informational; Settings → Subscriptions and servers manages sources. Server selection includes Throne's URL latency test and cancellation, without switching the selected profile. These measurements include the VPN path and are not ICMP ping. Unreachable and untested results are distinct; complete JSON profiles use a readable label instead of the internal `custom` type.
+
+The same vertical home layout is used at every window width. Desktop controls are centered and capped at 440 CSS pixels. The fallback shield and tray icon are amber with a cross when disconnected and green with a check when connected. A service logo retains its own colors.
+
+PNG/JPEG use Electron's raster decoder; WebP is decoded in an isolated Chromium world and reduced to a bounded PNG thumbnail. Only same-origin, size-limited raster downloads are accepted. Remote HTML, SVG scripts and service CSS are never executed. The service's default logo is included even when its separate custom-logo setting is empty.
+
+Renewal opens `/?renew=1` on the authenticated service origin. Core's existing renewal deep link preserves the request through browser sign-in and opens checkout. Desktop device tokens are not placed in browser URLs.
+
+Update checks begin alongside startup. The main screen shows download progress, transfer size/speed, verification and a three-second restart notice with a Later action. Active connections and tests defer installation. NSIS's existing one-click progress window remains visible while replacing files, then reopens the app automatically; no extra updater process is bundled. Signed release metadata and both file-hash checks remain enforced.

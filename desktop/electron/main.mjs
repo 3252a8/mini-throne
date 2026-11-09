@@ -10,32 +10,29 @@ import {parseDeepLink,parseImportLink} from './urls.mjs';
 import {consumeEnrollment} from './enrollment.mjs';
 import {normalizeBranding} from './branding.mjs';
 import {updates} from './updates.mjs';
+import {rasterLogo} from './logo.mjs';
+import {renewalUrl} from './service-links.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const demo=!app.isPackaged&&process.argv.includes('--demo');
 const customData=!app.isPackaged?process.argv.find(arg=>arg.startsWith('--data-dir='))?.slice(11):null;
 app.setPath('userData',customData||path.join(app.getPath('appData'),'Mini Throne'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-  let window,tray,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null;
+  let window,tray,trayConnected=null,trayIcons,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null;
   const directory=app.getPath('userData');
   let privateConfig={systemProxy:true,tun:false,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null,selectedProfile:null};
-  let state={version:app.getVersion(),ready:false,connected:false,busy:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,traffic:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
-  function publish(){state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
+  let state={version:app.getVersion(),ready:false,connected:false,busy:false,testing:false,testError:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,traffic:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
+  function publish(){if(tray&&trayIcons&&trayConnected!==state.connected){trayConnected=state.connected;tray.setImage(trayIcons[state.connected?'online':'offline']);tray.setToolTip('Mini Throne · '+(privateConfig.language==='ru'?(state.connected?'Подключено':'Не подключено'):(state.connected?'Connected':'Disconnected')));}state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
   function capabilities(status){state.tunAvailable=status.capabilities?.tun===true;state.tunConflict=!!status.tun_conflict;if(status.state==='running')state.routeName=status.route?.name||null;}
   async function saveConfig(){await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'settings.json'),JSON.stringify(privateConfig),{mode:0o600});}
-  function operation(action,{native=false}={}){const next=queue.then(async()=>{if(state.advanced&&!native){state.error='native_window_open';publish();return false;}state.busy=true;state.error=null;publish();try{return await action();}catch(error){state.error=String(error.message||'operation_failed').replace(/[^a-z0-9_]/gi,'').slice(0,80)||'operation_failed';return false;}finally{state.busy=false;publish();}});queue=next.catch(()=>{});return next;}
+  function operation(action,{native=false}={}){const next=queue.then(async()=>{if(state.testing)return false;if(state.advanced&&!native){state.error='native_window_open';publish();return false;}state.busy=true;state.error=null;publish();try{return await action();}catch(error){state.error=String(error.message||'operation_failed').replace(/[^a-z0-9_]/gi,'').slice(0,80)||'operation_failed';return false;}finally{state.busy=false;publish();}});queue=next.catch(()=>{});return next;}
   async function logo(origin,value){
     if(!value)return null;
     try{
       const url=new URL(value,origin);if(url.origin!==origin)return null;
       const result=await download(url,{maxBytes:524288});
       if(result.status!==200)return null;
-      const png=result.bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
-      const jpeg=result.bytes[0]===255&&result.bytes[1]===216;
-      const webp=result.bytes.subarray(0,4).toString()==='RIFF'&&result.bytes.subarray(8,12).toString()==='WEBP';
-      if(!png&&!jpeg&&!webp)return null;
-      const decoded=nativeImage.createFromBuffer(result.bytes);if(decoded.isEmpty())return null;
-      return decoded.resize({width:192,height:192,quality:'good'}).toDataURL();
+      return await rasterLogo(result.bytes,window.webContents);
     }catch{return null;}
   }
   async function syncSources({adoptNative=false}={}){
@@ -56,7 +53,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   async function loadManual(){
     if(state.sourceId===-1)return;
     const profiles=state.sourceId===null?[]:await engine.profiles(state.sourceId);
-    state.profiles=profiles.map(({id,name,country,latency_ms,type})=>({id,name,country:country||'',latency:latency_ms,type}));
+    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country:country||'',latency:latency_ms,latencyAt:latency_at,type}));
     state.active=profiles.length>0;
     if(!profiles.some(profile=>profile.id===state.selected))state.selected=profiles.find(profile=>profile.id===privateConfig.selectedProfile)?.id??profiles[0]?.id??null;
     privateConfig.selectedProfile=state.selected;await saveConfig();
@@ -99,7 +96,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       privateConfig.subscriptionHash=hash;await saveConfig();
     }else await engine.call('POST',`/v1/groups/${privateConfig.group}/update`,{timeout:60});
     const profiles=await engine.profiles(privateConfig.group);
-    state.profiles=profiles.map(({id,name,country,latency_ms,type})=>({id,name,country,latency:latency_ms,type}));
+    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));
     if(!state.profiles.some(p=>p.id===state.selected))state.selected=state.profiles.find(p=>p.id===privateConfig.selectedProfile)?.id??state.profiles.find(p=>p.name===previousName)?.id??state.profiles[0]?.id??null;
     privateConfig.selectedProfile=state.selected;await saveConfig();
     if(resume&&state.selected!==null){await engine.connect(state.selected,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
@@ -118,7 +115,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       state.advanced=false;state.connected=false;
       capabilities(await engine.start());state.ready=true;
       await syncSources({adoptNative:true});
-      if(state.sourceId===-1){const profiles=Number.isInteger(privateConfig.group)?await engine.profiles(privateConfig.group):[];state.profiles=profiles.map(({id,name,country,latency_ms,type})=>({id,name,country,latency:latency_ms,type}));state.active=profiles.length>0;state.selected=profiles.some(p=>p.id===state.selected)?state.selected:profiles[0]?.id??null;}
+      if(state.sourceId===-1){const profiles=Number.isInteger(privateConfig.group)?await engine.profiles(privateConfig.group):[];state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));state.active=profiles.length>0;state.selected=profiles.some(p=>p.id===state.selected)?state.selected:profiles[0]?.id??null;}
       else await loadManual();
       if(privateConfig.tun)capabilities(await engine.setTun(true));
       state.ready=true;state.error=null;return true;
@@ -141,6 +138,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     window.webContents.session.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
     window.on('close',event=>{if(!quitting&&tray){event.preventDefault();window.hide();}});
     const icon=nativeImage.createFromPath(app.isPackaged?path.join(process.resourcesPath,'icon.png'):path.join(here,'../assets/icon.png'));
+    trayIcons=Object.fromEntries(['online','offline'].map(mode=>[mode,nativeImage.createFromPath(app.isPackaged?path.join(process.resourcesPath,`shield-${mode}.png`):path.join(here,`../assets/shield-${mode}.png`))]));
     if(!icon.isEmpty()){tray=new Tray(icon);tray.setToolTip('Mini Throne');tray.setContextMenu(Menu.buildFromTemplate([{label:'Mini Throne',click:()=>window.show()},{label:privateConfig.language==='ru'?'Выход':'Quit',click:()=>app.quit()}]));tray.on('click',()=>window.show());}
     account=new Account({directory,safeStorage,openBrowser:url=>shell.openExternal(url),onLogin:value=>{state.login=value;publish();}});
     await account.load();
@@ -152,7 +150,19 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     handle('mini:select-profile',id=>operation(async()=>{if(!state.profiles.some(profile=>profile.id===id))throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;await saveConfig();if(state.connected)await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);return true;}));
     handle('mini:disconnect',()=>operation(async()=>{await engine.disconnect();state.connected=false;}));
     handle('mini:refresh',()=>operation(refresh));
-    handle('mini:renew',()=>operation(async()=>{if(!account.value)throw new Error('login_required');const url=new URL(account.value.origin);if(url.protocol!=='https:'||url.username||url.password)throw new Error('unsafe_url');await shell.openExternal(url.href);}));
+    handle('mini:test-latency',async()=>{
+      if(state.testing||state.busy||!state.ready||state.advanced||!state.profiles.length)return false;
+      state.testing=true;state.testError=false;publish();
+      const group=state.sourceId===-1?privateConfig.group:state.sourceId;
+      try{
+        await engine.testLatency(state.profiles.map(p=>p.id),async()=>{
+          const profiles=await engine.profiles(group);
+          state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));publish();
+        });return true;
+      }catch{state.testError=true;return false;}finally{state.testing=false;publish();}
+    });
+    handle('mini:cancel-test',()=>engine.cancelTest());
+    handle('mini:renew',()=>{if(!account.value)throw new Error('login_required');return shell.openExternal(renewalUrl(account.value.origin));});
     handle('mini:add-source',input=>operation(async()=>{
       if(!input||typeof input!=='object')throw new Error('invalid_import');
       const id=await engine.addSource(input);
@@ -196,7 +206,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       if(['ru','en'].includes(values.language))privateConfig.language=values.language;
       await saveConfig();
     }));
-    handle('mini:update',()=>operation(()=>state.update.status==='ready'?updater.install():updater.check()));
+    handle('mini:update',()=>operation(()=>['ready','countdown'].includes(state.update.status)?updater?.install():updater?.check()));
+    handle('mini:defer-update',()=>updater?.defer());
     handle('mini:advanced',()=>operation(async()=>{
       if(state.advanced)return true;
       nativeTransition=true;state.advanced=true;state.ready=false;publish();
@@ -211,6 +222,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     if(app.isPackaged)app.setAsDefaultProtocolClient('mini-throne');
     if(demo){Object.assign(state,{ready:true,active:true,sources:[{id:-1,name:'/service',subscription:true,count:4,service:true}],sourceId:-1,branding:{...normalizeBranding({name:'/service'}),logo:null},traffic:{used_bytes:291786752,limit_bytes:27917287424},origin:'https://vpn.example.com',expiresAt:'2026-12-09T00:00:00Z',profiles:[{id:1,name:'🇳🇱 Нидерланды',country:'NL',latency:42,type:'vless'},{id:2,name:'🇩🇪 Германия',country:'DE',latency:57,type:'vless'},{id:3,name:'🇸🇪 Швеция',country:'SE',latency:68,type:'vless'},{id:4,name:'🇫🇮 Финляндия',country:'FI',latency:76,type:'vless'}],selected:1});publish();return;}
     engine=new Engine({ruleDirectory:app.isPackaged?path.join(process.resourcesPath,'rules'):path.join(here,'../assets/rules'),runtime:app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(here,'../runtime'),data:path.join(directory,'engine'),guard:app.isPackaged?path.join(process.resourcesPath,'ProxyGuard.exe'):path.join(here,'../native/bin/ProxyGuard.exe'),onExit:({native})=>{state.connected=false;if(native&&!quitting&&!nativeTransition)void operation(()=>returnFromNative(),{native:true});else if(!quitting&&!nativeTransition)state.error='engine_stopped';publish();}});
+    updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;try{await shutdown();}catch(error){quitting=false;throw error;}},isConnected:()=>!state.ready||state.connected||state.busy||state.advanced||state.testing});
     await operation(async()=>{
       const started=await engine.start();capabilities(started);state.ready=true;
       try{await consumeEnrollment({directory,account,request:api});}
@@ -220,9 +232,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       if(state.sourceId===-1)await refresh();else await loadManual();
       if(privateConfig.tun){try{capabilities(await engine.setTun(true));}catch(error){state.error=error.code||'needs_privileges';}}
     });
-    updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;await shutdown();},isConnected:()=>state.connected||state.busy||state.advanced});
     const initialLink=process.argv.find(arg=>arg.startsWith('mini-throne:'));if(initialLink)link(initialLink);
     setInterval(async()=>{if(polling||state.busy||state.advanced||!state.ready||quitting)return;polling=true;try{const status=await engine.status();if(state.advanced||state.busy)return;capabilities(status);state.connected=status.state==='running';if(!state.connected)await engine.disableProxy();if(status.profile)state.selected=status.profile.id;publish();}catch{if(!state.advanced&&!state.busy){state.connected=false;state.error='engine_unavailable';publish();}}finally{polling=false;}},2500).unref();
-    setInterval(()=>{if(state.sources.length&&!state.busy&&!state.advanced)void operation(refresh);},3600000).unref();
+    setInterval(()=>{if(state.sources.length&&!state.busy&&!state.advanced&&!state.testing)void operation(refresh);},3600000).unref();
   }).catch(()=>{state.error='startup_failed';publish();});
 }

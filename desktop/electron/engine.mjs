@@ -81,6 +81,22 @@ export class Engine {
   status(){return this.call('GET','/v1/status');}
   setTun(enabled){return this.call('PUT','/v1/modes',{tun:enabled,timeout:60});}
   async profiles(group) {const result=await this.call('GET','/v1/profiles',undefined,{group:String(group)});return result.profiles;}
+  async testLatency(ids,onProgress){
+    if(this.testJob)throw new Error('test_busy');
+    const job=await this.call('POST','/v1/tests',{kind:'latency',profiles:ids,wait:false});
+    this.testJob=job.id;
+    try{
+      const deadline=Date.now()+120000;
+      while(Date.now()<deadline){
+        const current=await this.call('GET',`/v1/tests/${job.id}`);
+        await onProgress?.(current);
+        if(current.state!=='running')return current;
+        await delay(1000);
+      }
+      await this.cancelTest();throw new Error('test_timeout');
+    }finally{this.testJob=null;}
+  }
+  async cancelTest(){if(this.testJob)await this.call('DELETE',`/v1/tests/${this.testJob}`);}
   async addSource({kind,name,text}) {
     if(!['subscription','servers','json'].includes(kind)||typeof text!=='string'||!text.trim()||Buffer.byteLength(text)>2097152||typeof name!=='string'||name.length>80)throw new Error('invalid_import');
     text=text.trim();name=name.trim();

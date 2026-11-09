@@ -1,11 +1,12 @@
-Mini Throne 0.1.3 adds service branding and complete JSON profile support.
+Mini Throne 0.1.4 improves connection status, service branding and updates.
 
-- Use the authenticated Minishop name, logo and active theme palette on a simplified home screen.
-- Show subscription expiry and traffic; open the service web app from the renewal button.
-- Use /mini-throne and a shield icon when branding is unavailable; bundle country-flag glyphs for Windows.
-- Prefer a verified same-origin Xray JSON subscription endpoint when available. Preserve full configurations, balancers and provider routing; retain ordinary subscriptions and individual server links.
-- Accept JSON text and files. Let Throne finish its first geodata download before completing the connection attempt.
-- Preserve signed differential application updates and the standard repository-based plugin update workflow.
+- Decode service WebP logos using Chromium without adding an image-processing dependency. Include the service default logo in plugin bootstrap responses.
+- Show a yellow shield with a cross while disconnected and a green checked shield while connected; keep service branding unchanged. Reflect connection status in the Windows tray.
+- Keep subscription status informational. Open subscription and server management explicitly from Settings.
+- Measure server latency through Throne, show results and allow cancellation. Replace the internal CUSTOM label with a readable description.
+- Keep the same centered vertical layout on desktop, with controls limited to 440 px.
+- Open renewal checkout directly using the service's existing browser sign-in flow.
+- Show update download percentage, transferred bytes and speed on the home screen. Verify the signed download, allow postponing the restart, and show the one-click installer's real progress. Preserve differential downloads and defer installation during an active connection.
 
-Windows x64; plugin for Linux x86_64 / Python 3.12 and Core revision 67357d3cfad4a430bfd66fbb507ddad390e5eb73.
+Windows x64; plugin for Linux x86_64 / Python 3.12 and Core revision 67357d3cfad4a430bfd66fbb507ddad390e5eb73. Existing subscriptions, manual servers and full JSON routing are preserved.
 The EXE is not Authenticode signed; SmartScreen may show an unknown publisher.

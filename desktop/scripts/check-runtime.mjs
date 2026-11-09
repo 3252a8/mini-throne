@@ -75,6 +75,12 @@ try{
     request.on('error',reject);request.setTimeout(10000,()=>request.destroy(new Error('Proxy traffic timeout')));
   });
   assert.equal(body,'mini-throne-proxy-ok');assert.ok(hits>0);await engine.disconnect();
+  const settings=(await engine.call('GET','/v1/settings')).settings;
+  assert.ok('test_url' in settings && 'test_timeout_ms' in settings);
+  await engine.call('PUT','/v1/settings',{settings:{test_url:`http://127.0.0.1:${proxyPort}/ping`,test_timeout_ms:5000}});
+  const ping=await engine.testLatency([chosen.id]);assert.equal(ping.state,'done');
+  assert.ok(ping.results[0].latency_ms>=0);assert.ok(ping.results[0].latency_at>0);
+  assert.equal((await engine.status()).state,'idle');
   const fullConfig={remarks:'JSON routing',outbounds:[{protocol:'freedom',tag:'direct'}],routing:{rules:[{type:'field',domain:['example.com'],outboundTag:'direct'}]}};
   const jsonGroup=await engine.addSource({kind:'json',name:'JSON',text:JSON.stringify(fullConfig)});
   const jsonProfiles=await engine.profiles(jsonGroup);assert.equal(jsonProfiles.length,1);assert.equal(jsonProfiles[0].type,'custom');
