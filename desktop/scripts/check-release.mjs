@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import {generateKeyPairSync,sign} from 'node:crypto';
 import {verifyRelease} from '../electron/release-manifest.mjs';
 import {parseImportLink,parseDeepLink} from '../electron/urls.mjs';
+import {normalizeBranding} from '../electron/branding.mjs';
+import {jsonProfiles,preferredSubscription} from '../electron/subscription.mjs';
 
 const {privateKey,publicKey}=generateKeyPairSync('ed25519');
 const policy={repository:'3252a8/mini-throne',publicKey:publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('base64')};
@@ -17,3 +19,12 @@ assert.equal(parseImportLink('mini-throne://import/'+encodeURIComponent(nested))
 for(const bad of ['file:///etc/passwd','javascript:alert(1)','https://user:password@example.com/sub'])assert.throws(()=>parseImportLink('mini-throne://import/'+bad));
 assert.equal(parseDeepLink('mini-throne://connect?instance=https%3A%2F%2Fexample.com'),'https://example.com');
 console.log('Signed manifest, tamper rejection, repository pin, import deep links: passed');
+const theme=normalizeBranding({name:' /test ',theme:{accent:'#123456',bg:'url(https://example.com)',text:'rgba(255, 255, 255, 0.9)'}});
+assert.equal(theme.name,'/test');assert.equal(theme.theme.accent,'#123456');assert.equal(theme.theme.bg,'#060b0e');assert.equal(theme.theme.text,'rgba(255, 255, 255, 0.9)');
+assert.equal(normalizeBranding().name,'/mini-throne');
+const full={remarks:'Automatic',outbounds:[{protocol:'freedom',tag:'direct'}],routing:{rules:[{type:'field',domain:['example.com'],outboundTag:'direct'}],balancers:[{tag:'automatic',selector:['proxy']} ]}};
+assert.deepEqual(JSON.parse(jsonProfiles(JSON.stringify(full))),[full]);
+const choice=await preferredSubscription('https://example.com/sub?key=synthetic',async url=>{assert.equal(url.pathname,'/sub/json');assert.equal(url.search,'?key=synthetic');return {status:200,bytes:Buffer.from(JSON.stringify([full]))};});
+assert.equal(choice.fullXray,true);assert.equal(choice.url,'https://example.com/sub/json?key=synthetic');
+assert.deepEqual(await preferredSubscription('https://example.com/sub',async()=>({status:200,bytes:Buffer.from('<html>not a subscription</html>')})),{url:'https://example.com/sub',fullXray:false});
+console.log('Theme validation, fallback branding, complete JSON preservation and format negotiation: passed');

@@ -75,6 +75,11 @@ try{
     request.on('error',reject);request.setTimeout(10000,()=>request.destroy(new Error('Proxy traffic timeout')));
   });
   assert.equal(body,'mini-throne-proxy-ok');assert.ok(hits>0);await engine.disconnect();
+  const fullConfig={remarks:'JSON routing',outbounds:[{protocol:'freedom',tag:'direct'}],routing:{rules:[{type:'field',domain:['example.com'],outboundTag:'direct'}]}};
+  const jsonGroup=await engine.addSource({kind:'json',name:'JSON',text:JSON.stringify(fullConfig)});
+  const jsonProfiles=await engine.profiles(jsonGroup);assert.equal(jsonProfiles.length,1);assert.equal(jsonProfiles[0].type,'custom');
+  const jsonStatus=await engine.connect(jsonProfiles[0].id,false);assert.equal(jsonStatus.state,'running');assert.equal(jsonStatus.route.name,'Mini Throne · Subscription routing');await engine.disconnect();
+  await engine.call('DELETE',`/v1/groups/${jsonGroup}`);
   const before=(await engine.call('GET','/v1/groups')).groups.length;
   await assert.rejects(engine.addSource({kind:'servers',name:'Invalid source',text:'vless://invalid'}));
   assert.equal((await engine.call('GET','/v1/groups')).groups.length,before);
@@ -95,7 +100,7 @@ try{
   assert.equal((await engine.profiles(manual)).length,links.length);
   assert.equal((await engine.profiles(subscription))[0].name,'Subscription 2');
   await engine.call('DELETE',`/v1/groups/${manual}`);await engine.call('DELETE',`/v1/groups/${subscription}`);
-  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,nativeGui:true,nativeSettingsPersisted:true,nativeRoutePreserved:true,tunDisabled:true,tunPrivilegeRefusal:!status.capabilities?.tun,manualProfiles:links.length,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
+  console.log(JSON.stringify({electron:process.versions.electron,frames,rejections,engineReady:true,nativeGui:true,nativeSettingsPersisted:true,nativeRoutePreserved:true,tunDisabled:true,tunPrivilegeRefusal:!status.capabilities?.tun,manualProfiles:links.length,jsonFullConfigStarted:true,subscriptionImport:true,subscriptionUpdate:true,persistedAfterRestart:true,proxyTraffic:true,failedImportRolledBack:true,systemProxyChanged:false}));
 }catch(error){code=1;console.error(error);}finally{
   if(engine){
     await engine.shutdown();

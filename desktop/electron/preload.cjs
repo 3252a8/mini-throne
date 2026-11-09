@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('miniThrone',Object.freeze({
   selectProfile:id=>ipcRenderer.invoke('mini:select-profile',id),
   connect:id=>ipcRenderer.invoke('mini:connect',id),
   disconnect:()=>ipcRenderer.invoke('mini:disconnect'),
+  renew:()=>ipcRenderer.invoke('mini:renew'),
   refresh:()=>ipcRenderer.invoke('mini:refresh'),
   addSource:input=>ipcRenderer.invoke('mini:add-source',input),
   selectSource:id=>ipcRenderer.invoke('mini:select-source',id),

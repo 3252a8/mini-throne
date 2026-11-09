@@ -10,7 +10,7 @@ export function publicAddress(address,family) {
   if(address.toLowerCase().startsWith('::ffff:'))return false;
   return !blocked.check(address,family===6?'ipv6':'ipv4');
 }
-export function download(url,{method='GET',body,token,maxBytes=1048576,allowLocal=false}={}) {
+export function download(url,{method='GET',body,token,maxBytes=1048576,allowLocal=false,timeoutMs=20000}={}) {
   const target=new URL(url);
   if(target.username||target.password||target.hash||target.protocol!=='https:'&&!(allowLocal&&target.protocol==='http:'&&['127.0.0.1','localhost','[::1]'].includes(target.hostname)))throw new Error('unsafe_url');
   return new Promise((resolve,reject)=>{
@@ -30,7 +30,7 @@ export function download(url,{method='GET',body,token,maxBytes=1048576,allowLoca
       response.on('error',reject);
       response.on('end',()=>resolve({status:response.statusCode,headers:response.headers,bytes:Buffer.concat(chunks)}));
     });
-    const timer=setTimeout(()=>request.destroy(new Error('network_timeout')),20000);
+    const timer=setTimeout(()=>request.destroy(new Error('network_timeout')),timeoutMs);
     request.on('close',()=>clearTimeout(timer));request.on('error',reject);
     request.end(payload);
   });

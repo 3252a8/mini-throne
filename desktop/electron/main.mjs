@@ -8,6 +8,7 @@ import {Account} from './account.mjs';
 import {download,api} from './http.mjs';
 import {parseDeepLink,parseImportLink} from './urls.mjs';
 import {consumeEnrollment} from './enrollment.mjs';
+import {normalizeBranding} from './branding.mjs';
 import {updates} from './updates.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
@@ -18,7 +19,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   let window,tray,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null;
   const directory=app.getPath('userData');
   let privateConfig={systemProxy:true,tun:false,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null,selectedProfile:null};
-  let state={version:app.getVersion(),ready:false,connected:false,busy:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
+  let state={version:app.getVersion(),ready:false,connected:false,busy:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,traffic:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
   function publish(){state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
   function capabilities(status){state.tunAvailable=status.capabilities?.tun===true;state.tunConflict=!!status.tun_conflict;if(status.state==='running')state.routeName=status.route?.name||null;}
   async function saveConfig(){await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'settings.json'),JSON.stringify(privateConfig),{mode:0o600});}
@@ -34,7 +35,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       const webp=result.bytes.subarray(0,4).toString()==='RIFF'&&result.bytes.subarray(8,12).toString()==='WEBP';
       if(!png&&!jpeg&&!webp)return null;
       const decoded=nativeImage.createFromBuffer(result.bytes);if(decoded.isEmpty())return null;
-      return decoded.resize({width:96,height:96,quality:'good'}).toDataURL();
+      return decoded.resize({width:192,height:192,quality:'good'}).toDataURL();
     }catch{return null;}
   }
   async function syncSources({adoptNative=false}={}){
@@ -44,7 +45,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     const manual=groups.filter(group=>ids.includes(group.id)&&group.id!==privateConfig.group&&!group.archived);
     privateConfig.manualGroups=manual.map(group=>group.id);
     state.sources=manual.map(group=>({id:group.id,name:group.name,subscription:group.subscription,count:group.profile_count,service:false}));
-    if(account.value)state.sources.unshift({id:-1,name:state.branding?.name||'Minishop',subscription:true,count:0,service:true});
+    if(account.value)state.sources.unshift({id:-1,name:state.branding?.name||'/mini-throne',subscription:true,count:0,service:true});
     if(!state.sources.some(source=>source.id===privateConfig.sourceId))privateConfig.sourceId=state.sources[0]?.id??null;
     state.sourceId=privateConfig.sourceId;
     const {routes}=await engine.call('GET','/v1/routes');
@@ -78,7 +79,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
         await engine.disconnect();await account.forget();
         if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`).catch(()=>{});
         privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();
-        Object.assign(state,{connected:false,active:false,profiles:[],origin:null,branding:null,selected:null});
+        Object.assign(state,{connected:false,active:false,profiles:[],origin:null,branding:null,traffic:null,expiresAt:null,selected:null});
       }
       throw error;
     }
@@ -86,11 +87,12 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     const previousName=state.profiles.find(profile=>profile.id===state.selected)?.name;
     if(data.protocol!==1)throw new Error('unsupported_service');
     const brand=data.branding||{};
-    state.branding={name:String(brand.name||'Minishop').slice(0,80),accent:/^#[a-f0-9]{6}$/i.test(brand.accent)?brand.accent:'#55ded4',logo:await logo(account.value.origin,brand.logo_url)};
+    state.branding={...normalizeBranding(brand),logo:await logo(account.value.origin,brand.logo_url)};
+    state.traffic=data.subscription?.traffic||null;
     state.origin=account.value.origin;state.expiresAt=data.subscription?.expires_at||null;state.active=data.subscription?.active===true;
     if(!state.active){await engine.disconnect();state.connected=false;state.profiles=[];return;}
     const url=new URL(data.subscription.url);if(url.protocol!=='https:'||url.username||url.password)throw new Error('unsafe_subscription');
-    const {createHash}=await import('node:crypto');const hash=createHash('sha256').update(url.href).digest('hex');
+    const {createHash}=await import('node:crypto');const hash=createHash('sha256').update('xray-json-v1:'+url.href).digest('hex');
     if(hash!==privateConfig.subscriptionHash||!Number.isInteger(privateConfig.group)){
       if(state.connected){resume=true;await engine.disconnect();state.connected=false;}
       privateConfig.group=await engine.replaceSubscription({name:state.branding.name,url:url.href},privateConfig.group);
@@ -133,7 +135,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     await fs.mkdir(directory,{recursive:true});
     try{const stored=JSON.parse(await fs.readFile(path.join(directory,'settings.json'),'utf8'));privateConfig={...privateConfig,...stored};}catch{}
     privateConfig.tun=privateConfig.tun===true;if(privateConfig.tun)privateConfig.systemProxy=false;
-    window=new BrowserWindow({width:460,height:760,minWidth:390,minHeight:600,show:false,title:'Mini Throne',backgroundColor:'#191b1e',autoHideMenuBar:true,webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
+    window=new BrowserWindow({width:460,height:820,minWidth:390,minHeight:650,show:false,title:'Mini Throne',backgroundColor:'#060b0e',autoHideMenuBar:true,webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
     window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     window.webContents.on('will-navigate',event=>event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
@@ -150,6 +152,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     handle('mini:select-profile',id=>operation(async()=>{if(!state.profiles.some(profile=>profile.id===id))throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;await saveConfig();if(state.connected)await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);return true;}));
     handle('mini:disconnect',()=>operation(async()=>{await engine.disconnect();state.connected=false;}));
     handle('mini:refresh',()=>operation(refresh));
+    handle('mini:renew',()=>operation(async()=>{if(!account.value)throw new Error('login_required');const url=new URL(account.value.origin);if(url.protocol!=='https:'||url.username||url.password)throw new Error('unsafe_url');await shell.openExternal(url.href);}));
     handle('mini:add-source',input=>operation(async()=>{
       if(!input||typeof input!=='object')throw new Error('invalid_import');
       const id=await engine.addSource(input);
@@ -170,7 +173,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       privateConfig.manualGroups=privateConfig.manualGroups.filter(value=>value!==id);
       await syncSources();if(state.sourceId===-1)await refresh();else await loadManual();return true;
     }));
-    handle('mini:logout',()=>operation(async()=>{await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});await syncSources();await loadManual();}));
+    handle('mini:logout',()=>operation(async()=>{await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],traffic:null,expiresAt:null,branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});await syncSources();await loadManual();}));
     handle('mini:settings',values=>operation(async()=>{
       if(!values||typeof values!=='object')throw new Error('invalid_settings');
       if(typeof values.systemProxy==='boolean'||typeof values.tun==='boolean'){
@@ -206,7 +209,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     handle('mini:close-advanced',()=>operation(()=>returnFromNative(),{native:true}));
     await window.loadFile(path.join(here,'../dist/index.html'));if(!process.argv.includes('--hidden'))window.show();
     if(app.isPackaged)app.setAsDefaultProtocolClient('mini-throne');
-    if(demo){Object.assign(state,{ready:true,active:true,branding:{name:'Northline',accent:'#55ded4',logo:null},origin:'https://vpn.example.com',expiresAt:'2026-12-09T00:00:00Z',profiles:[{id:1,name:'Нидерланды',country:'NL',latency:42,type:'vless'},{id:2,name:'Германия',country:'DE',latency:57,type:'vless'},{id:3,name:'Швеция',country:'SE',latency:68,type:'vless'},{id:4,name:'Финляндия',country:'FI',latency:76,type:'vless'}],selected:1});publish();return;}
+    if(demo){Object.assign(state,{ready:true,active:true,sources:[{id:-1,name:'/service',subscription:true,count:4,service:true}],sourceId:-1,branding:{...normalizeBranding({name:'/service'}),logo:null},traffic:{used_bytes:291786752,limit_bytes:27917287424},origin:'https://vpn.example.com',expiresAt:'2026-12-09T00:00:00Z',profiles:[{id:1,name:'🇳🇱 Нидерланды',country:'NL',latency:42,type:'vless'},{id:2,name:'🇩🇪 Германия',country:'DE',latency:57,type:'vless'},{id:3,name:'🇸🇪 Швеция',country:'SE',latency:68,type:'vless'},{id:4,name:'🇫🇮 Финляндия',country:'FI',latency:76,type:'vless'}],selected:1});publish();return;}
     engine=new Engine({ruleDirectory:app.isPackaged?path.join(process.resourcesPath,'rules'):path.join(here,'../assets/rules'),runtime:app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(here,'../runtime'),data:path.join(directory,'engine'),guard:app.isPackaged?path.join(process.resourcesPath,'ProxyGuard.exe'):path.join(here,'../native/bin/ProxyGuard.exe'),onExit:({native})=>{state.connected=false;if(native&&!quitting&&!nativeTransition)void operation(()=>returnFromNative(),{native:true});else if(!quitting&&!nativeTransition)state.error='engine_stopped';publish();}});
     await operation(async()=>{
       const started=await engine.start();capabilities(started);state.ready=true;

@@ -96,6 +96,21 @@ async def main():
             default_subscription_guides_config_text,
             validate_subscription_guides_config,
         )
+        from config.webapp_themes_config import builtin_webapp_themes_config
+        from types import SimpleNamespace
+
+        branding = module("branding")
+        settings = SimpleNamespace(
+            webapp_themes_catalog=builtin_webapp_themes_config("#123456"),
+            WEBAPP_PRIMARY_COLOR="#123456",
+        )
+        palette = branding.branding_theme(settings)
+        assert palette and "bg" in palette and "accent" in palette
+        assert set(palette) <= set(branding.COLORS)
+        assert branding.traffic_details(
+            {"userTraffic": {"usedTrafficBytes": 1024}, "trafficLimitBytes": 2048}
+        ) == {"used_bytes": 1024, "limit_bytes": 2048}
+        assert branding.traffic_details({"usedTrafficBytes": -1})["used_bytes"] is None
 
         original = json.loads(default_subscription_guides_config_text())
         updated, changed = guides.add_app(original)

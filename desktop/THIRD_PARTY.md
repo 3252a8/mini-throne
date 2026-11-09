@@ -21,3 +21,7 @@ The offline Russia rule sets come from MetaCubeX/meta-rules-dat (GPL-3.0),
 commit 1df33612b1ccc2346e4dbe47a69facf7d1c780bf on its sing branch. Their JSON
 sources, binary SRS files, license and exact SHA-256 provenance are in
 `desktop/assets/rules/`. Recompile the JSON sources with sing-box `rule-set compile`.
+
+Twemoji Country Flags (country-flag-emoji-polyfill 0.1.10, TalkJS) is bundled
+for Windows flag rendering. Code: MIT; Twemoji artwork: CC BY 4.0.
+See licenses/TwemojiCountryFlags.LICENSE.md and https://github.com/talkjs/country-flag-emoji-polyfill.

@@ -1,7 +1,7 @@
 {
   "name": "mini-throne",
   "productName": "Mini Throne",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A simple Windows client for Minishop, powered by Throne",
   "author": "3252a8",
   "license": "GPL-3.0-only",
@@ -73,6 +73,10 @@
       {
         "from": "THIRD_PARTY.md",
         "to": "licenses/THIRD_PARTY.md"
+      },
+      {
+        "from": "src/assets/TwemojiCountryFlags.LICENSE.md",
+        "to": "licenses/TwemojiCountryFlags.LICENSE.md"
       }
     ],
     "protocols": [

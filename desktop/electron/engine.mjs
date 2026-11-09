@@ -7,6 +7,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {setTimeout as delay} from 'node:timers/promises';
 import {request} from './throne-api.mjs';
+import {jsonProfiles,fullXraySubscription,preferredSubscription} from './subscription.mjs';
 import {prepareNativeApi} from './native-settings.mjs';
 
 export const RUSSIA_ROUTE = {
@@ -81,24 +82,28 @@ export class Engine {
   setTun(enabled){return this.call('PUT','/v1/modes',{tun:enabled,timeout:60});}
   async profiles(group) {const result=await this.call('GET','/v1/profiles',undefined,{group:String(group)});return result.profiles;}
   async addSource({kind,name,text}) {
-    if(!['subscription','servers'].includes(kind)||typeof text!=='string'||!text.trim()||Buffer.byteLength(text)>262144||typeof name!=='string'||name.length>80)throw new Error('invalid_import');
+    if(!['subscription','servers','json'].includes(kind)||typeof text!=='string'||!text.trim()||Buffer.byteLength(text)>2097152||typeof name!=='string'||name.length>80)throw new Error('invalid_import');
     text=text.trim();name=name.trim();
     if(kind==='subscription'){
       const url=new URL(text);
-      if(!['https:','http:'].includes(url.protocol)||url.hash||/\s/.test(text))throw new Error('invalid_subscription');
+      if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.hash||/\s/.test(text))throw new Error('invalid_subscription');
       return this.replaceSubscription({name:name||url.hostname,url:url.href});
     }
+    if(kind==='json')text=jsonProfiles(text);
     const links=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
-    if(links.length>200||links.some(link=>!/^[-a-z0-9+]+:\/\//i.test(link)||/^(file|javascript|data):/i.test(link)))throw new Error('invalid_import');
-    const {group}=await this.call('POST','/v1/groups',{name:name||'Servers',route_id:-1});
+    if(kind!=='json'&&(links.length>200||links.some(link=>!/^[-a-z0-9+]+:\/\//i.test(link)||/^(file|javascript|data):/i.test(link))))throw new Error('invalid_import');
+    const routeId=kind==='json'&&fullXraySubscription(JSON.parse(text))?await this.subscriptionRouting():-1;
+    const {group}=await this.call('POST','/v1/groups',{name:name||'Servers',route_id:routeId});
     try{
-      const result=await this.call('POST','/v1/import',{as:'profiles',text:links.join('\n'),group:group.id,timeout:60});
+      const result=await this.call('POST','/v1/import',{as:'profiles',text:kind==='json'?text:links.join('\n'),group:group.id,timeout:60});
       if(!result.imported||result.failed)throw new Error('invalid_import');
       return group.id;
     }catch(error){await this.call('DELETE',`/v1/groups/${group.id}`).catch(()=>{});throw error;}
   }
   async replaceSubscription({name,url},oldGroup) {
-    const result=await this.call('POST','/v1/groups',{name,url,auto_update:true,update:true,route_id:-1,import_route:false,timeout:60});
+    const preferred=await preferredSubscription(url);url=preferred.url;
+    const routeId=preferred.fullXray?await this.subscriptionRouting():-1;
+    const result=await this.call('POST','/v1/groups',{name,url,auto_update:true,update:true,route_id:routeId,import_route:false,timeout:60});
     const id=result.group.id;
     if(result.update?.ok===false || !(await this.profiles(id)).length) {
       await this.call('DELETE',`/v1/groups/${id}`).catch(()=>{});
@@ -107,11 +112,24 @@ export class Engine {
     if(Number.isInteger(oldGroup)&&oldGroup!==id)await this.call('DELETE',`/v1/groups/${oldGroup}`);
     return id;
   }
+  async subscriptionRouting(){
+    const name='Mini Throne · Subscription routing';
+    const {routes}=await this.call('GET','/v1/routes');
+    const route=routes.find(r=>r.name===name)||(await this.call('POST','/v1/routes',{name,kind:'raw',raw_route:JSON.stringify({rules:[],final:-1}),default_outbound:-1,prevent_modifications:false})).route;
+    return route.id;
+  }
   async connect(id,systemProxy=true,tun=false) {
     const before=await this.status();
     if(before.tun!==tun)await this.setTun(tun);
-    let status=await this.call('PUT','/v1/connection',{profile:id,timeout:60});
-    for(let attempt=0;status.state==='connecting'&&attempt<30;attempt++){await delay(1000);status=await this.status();}
+    let status,waitingForGeo=false;
+    try{status=await this.call('PUT','/v1/connection',{profile:id,timeout:60});}
+    catch(error){
+      // Headless Throne downloads missing geodata and retries the same profile.
+      // Its initial API response arrives before that asynchronous retry finishes.
+      if(error.code!=='geo_assets_missing')throw error;
+      waitingForGeo=true;status=await this.status();
+    }
+    for(let attempt=0;(status.state==='connecting'||waitingForGeo&&status.state!=='running')&&attempt<60;attempt++){await delay(1000);status=await this.status();}
     if(status.state!=='running'||status.profile?.id!==id){await this.call('DELETE','/v1/connection').catch(()=>{});throw new Error('connection_pending');}
     if(systemProxy&&!tun) {
       try {await this.enableProxy(status.inbound.port);}catch(error){await this.call('DELETE','/v1/connection').catch(()=>{});throw error;}

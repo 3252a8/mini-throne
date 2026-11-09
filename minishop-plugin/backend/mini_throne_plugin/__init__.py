@@ -116,7 +116,7 @@ async def body(request: web.Request) -> dict:
 
 class MiniThronePlugin(Plugin):
     name = "mini-throne"
-    version = "0.1.2"
+    version = "0.1.3"
     plugin_api_min_version = 1
     plugin_api_max_version = 1
 
@@ -495,6 +495,7 @@ class DeviceApi:
                 int(subscription.subscription_id) if subscription else None
             )
         link = None
+        panel = {}
         if panel_id:
             try:
                 panel = await asyncio.wait_for(
@@ -532,20 +533,25 @@ class DeviceApi:
         accent = settings.WEBAPP_PRIMARY_COLOR or "#6c5ce7"
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
             accent = "#6c5ce7"
+        from .branding import branding_theme, traffic_details
+
+        theme = branding_theme(settings)
         # The client only accepts raster images through the same-origin asset URL.
         logo = _resolve_webapp_logo_url(settings) if settings.WEBAPP_LOGO_URL else None
         return response(
             {
                 "protocol": 1,
                 "branding": {
-                    "name": settings.WEBAPP_TITLE[:80],
-                    "accent": accent,
+                    "name": (settings.WEBAPP_TITLE or "/mini-throne")[:80],
+                    "accent": theme.get("accent", accent),
+                    "theme": theme,
                     "logo_url": logo,
                 },
                 "subscription": {
                     "active": bool(link),
                     "url": link,
                     "expires_at": expires,
+                    "traffic": traffic_details(panel) if link else None,
                 },
                 "defaults": {
                     "system_proxy": True,
