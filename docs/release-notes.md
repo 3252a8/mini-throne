@@ -1,6 +1,6 @@
-Mini Throne 0.1.7 fixes automatic-route probes and preserves service animation.
+Mini Throne 0.1.8 fixes automatic-route probes and preserves service animation.
 
-- Wait for the first routing observations before measuring full Xray configurations with automatic balancers. Keep the subscription's routing and observation settings intact.
+- Wait for the first routing observations before the first connection and before measuring full Xray configurations with automatic balancers. Keep the subscription's routing and observation settings intact.
 - Bundle verified geoip.dat and geosite.dat databases, so JSON routes do not need a separate first-run download. Preserve custom user databases.
 - Show protocol, transport and security details in the server picker, including the protocols used by automatic routes.
 - Preserve animated WebP service logos instead of converting them to a static PNG.

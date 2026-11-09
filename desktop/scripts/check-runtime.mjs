@@ -58,7 +58,8 @@ try{
   servers.at(-1).on('connect',(_request,socket,head)=>{
     socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
     const reply=()=>{hits++;socket.end('HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\nmini-throne-proxy-ok');};
-    if(head.length)reply();else socket.once('data',reply);
+    const delayedReply=()=>setTimeout(reply,100);
+    if(head.length)delayedReply();else socket.once('data',delayedReply);
   });
   const httpLink=`http://127.0.0.1:${proxyPort}/#Manual%20HTTP`;
   const links=[httpLink,'vless://11111111-1111-4111-8111-111111111111@203.0.113.1:443?security=tls&type=tcp#VLESS','trojan://synthetic-password@203.0.113.1:443#Trojan',`ss://${Buffer.from('aes-128-gcm:synthetic-password').toString('base64')}@203.0.113.1:443#Shadowsocks`];
@@ -85,11 +86,17 @@ try{
   assert.ok(ping.results[0].latency_ms>0);assert.ok(ping.results[0].latency_at>0);
   assert.equal((await engine.status()).state,'idle');
   const observationPort=await listen((_request,response)=>setTimeout(()=>{response.writeHead(204);response.end();},100));
-  const autoConfig={remarks:'Automatic test',outbounds:[{protocol:'freedom',tag:'candidate'}],routing:{balancers:[{tag:'auto',selector:['candidate'],strategy:{type:'leastLoad'}}],rules:[{type:'field',network:'tcp,udp',balancerTag:'auto'}]},burstObservatory:{subjectSelector:['candidate'],pingConfig:{destination:`http://127.0.0.1:${observationPort}/`,interval:'30s',sampling:1,timeout:'2s'}}};
+  const autoConfig={remarks:'Automatic test',outbounds:[{protocol:'http',tag:'candidate',settings:{servers:[{address:'127.0.0.1',port:proxyPort}]}}],routing:{balancers:[{tag:'auto',selector:['candidate'],strategy:{type:'leastLoad'}}],rules:[{type:'field',network:'tcp,udp',balancerTag:'auto'}]},burstObservatory:{subjectSelector:['candidate'],pingConfig:{destination:`http://127.0.0.1:${observationPort}/`,interval:'30s',sampling:1,timeout:'2s'}}};
   const autoGroup=await engine.addSource({kind:'json',name:'Automatic',text:JSON.stringify(autoConfig)});
   const autoProfiles=await engine.profiles(autoGroup);assert.equal(autoProfiles[0].details.automatic,true);
   const autoPing=await engine.testLatency([autoProfiles[0].id]);
   assert.ok(autoPing.results[0].latency_ms>0);assert.ok(autoPing.results[0].latency_at>0);
+  const autoConnected=await engine.connect(autoProfiles[0].id,false);
+  const autoBody=await new Promise((resolve,reject)=>{
+    const request=http.get({hostname:'127.0.0.1',port:autoConnected.inbound.port,path:'http://203.0.113.42/first-request',headers:{host:'203.0.113.42'},agent:false},response=>{let text='';response.on('data',chunk=>text+=chunk);response.on('end',()=>resolve(text));});
+    request.on('error',reject);request.setTimeout(10000,()=>request.destroy(new Error('Automatic route first request timeout')));
+  });
+  assert.equal(autoBody,'mini-throne-proxy-ok');await engine.disconnect();
   await engine.call('DELETE',`/v1/groups/${autoGroup}`);
   const fullConfig={remarks:'JSON routing',outbounds:[{protocol:'freedom',tag:'direct'}],routing:{rules:[{type:'field',domain:['example.com'],outboundTag:'direct'}]}};
   const jsonGroup=await engine.addSource({kind:'json',name:'JSON',text:JSON.stringify(fullConfig)});

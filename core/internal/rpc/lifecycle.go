@@ -82,6 +82,7 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 	// Filled in below, once boxmain.Create has built the box these sidecars resolve through.
 	var boxCtx boxContextHolder
 	prepareXray := xrayPreparer(in.GetXrayOutboundDnsStrategy(), boxCtx.get)
+	var readyXray func(context.Context)
 
 	if *in.NeedXray {
 		if in.GetXrayLazyStart() {
@@ -109,6 +110,7 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 				return
 			}
 			setXray(instance, nil)
+			readyXray = func(ctx context.Context) { xray.AwaitRouting(ctx, instance, in.GetXrayConfig()) }
 		}
 	}
 
@@ -160,6 +162,9 @@ func (s *server) Start(ctx context.Context, in *gen.LoadConfigReq) (out *gen.Err
 		return
 	}
 	setBoxInstance(box, cancel, routeRules)
+	if readyXray != nil {
+		readyXray(box.Context())
+	}
 
 	if systemDNS {
 		if e := sysdns.Apply(box.Network().InterfaceMonitor()); e != nil {

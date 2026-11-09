@@ -55,6 +55,7 @@ func prepareTestEnv(current bool, needXray bool, xrayConfig string, xrayFullConf
 		}
 	}
 
+	var readyXray func(context.Context)
 	if needXray {
 		instance, err := xray.CreateXrayInstance(xrayConfig)
 		if err != nil {
@@ -72,6 +73,7 @@ func prepareTestEnv(current bool, needXray bool, xrayConfig string, xrayFullConf
 			return nil, err
 		}
 		cleanups = append(cleanups, func() { _ = instance.Close() })
+		readyXray = func(ctx context.Context) { xray.AwaitRouting(ctx, instance, xrayConfig) }
 	}
 
 	fullXray, err := startXrayFullConfigs(xrayFullConfigs, prepareXray)
@@ -103,6 +105,9 @@ func prepareTestEnv(current bool, needXray bool, xrayConfig string, xrayFullConf
 	}
 	return &testEnv{box: box, tags: outTags, close: unwind, ready: func(ctx context.Context) {
 		var pending sync.WaitGroup
+		if readyXray != nil {
+			pending.Go(func() { readyXray(ctx) })
+		}
 		for i, instance := range fullXray {
 			pending.Go(func() { xray.AwaitRouting(ctx, instance, xrayFullConfigs[i]) })
 		}

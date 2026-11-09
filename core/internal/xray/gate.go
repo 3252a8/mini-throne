@@ -382,6 +382,9 @@ func (g *Gate) startInstance(holdProbes bool) (*core.Instance, []string, error) 
 		_ = instance.Close()
 		return nil, nil, err
 	}
+	// Hold the first connection until an automatic balancer has observations.
+	// This also applies when an idle or recycled instance starts again.
+	AwaitRouting(context.Background(), instance, config)
 
 	targets := make([]string, len(ports))
 	for i, port := range ports {
