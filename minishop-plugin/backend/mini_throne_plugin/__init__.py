@@ -116,7 +116,7 @@ async def body(request: web.Request) -> dict:
 
 class MiniThronePlugin(Plugin):
     name = "mini-throne"
-    version = "0.1.9"
+    version = "0.1.10"
     plugin_api_min_version = 1
     plugin_api_max_version = 1
 
@@ -134,7 +134,7 @@ class MiniThronePlugin(Plugin):
         from .guides import sync_panel
 
         policy = json.loads(
-            Path(__file__).with_name("release-policy.json").read_bytes()
+            (Path(__file__).resolve().parents[2] / "metadata/release-policy.json").read_bytes()
         )
         directory = package_root().parent / "mini-throne"
         cache = ReleaseCache(directory / "installers", policy)

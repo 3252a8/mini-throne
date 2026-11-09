@@ -1,4 +1,8 @@
-Mini Throne 0.1.9 simplifies setup and updates automatically before connecting.
+Mini Throne 0.1.10 fixes companion plugin compatibility when updating Minishop Core.
+
+- Declare the required Core UI and installation-guide contracts instead of pinning the portable plugin to one Core commit. Signed package checks cover a different compatible Core revision and reject missing contracts.
+
+Includes the setup and automatic update improvements from 0.1.9:
 
 - One active add button in an empty app. Paste from the clipboard into a single field; subscription URLs, individual servers, complete Xray JSON, exported links and deep links are recognized automatically.
 - Reuse dialogs and icons with an accessible close button. Keep the compact layout on wide windows.

@@ -79,7 +79,7 @@ def main() -> None:
                 and path.suffix not in {".pyc", ".pyo"}
             ):
                 files[path.relative_to(source).as_posix()] = path.read_bytes()
-    files["backend/mini_throne_plugin/release-policy.json"] = (
+    files["metadata/release-policy.json"] = (
         ROOT / "desktop/electron/update-config.json"
     ).read_bytes()
     manifest = {
@@ -94,6 +94,10 @@ def main() -> None:
         "plugin_api": 1,
         "frontend_host_api": 1,
         "core_revision": revision,
+        "core_compatibility": {
+            "mode": "capabilities",
+            "requires": config["pluginCapabilities"],
+        },
         "runtime": {
             "python": args.python,
             "system": args.system,

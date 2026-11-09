@@ -10,6 +10,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -151,6 +152,30 @@ async def main():
     print(
         "Plugin signature rejection, verified cache, offline retention, pinned downloads, Core guide schema, idempotent panel update: passed"
     )
+    archive_pattern = os.environ.get("PLUGIN_ARCHIVE")
+    if archive_pattern:
+        from bot.plugins import packages
+
+        archives = list(ROOT.glob(archive_pattern))
+        assert len(archives) == 1, "Expected one freshly built plugin archive"
+        body = archives[0].read_bytes()
+        required = json.loads((ROOT / "release-config.json").read_text())["pluginCapabilities"]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch.object(packages, "_running_core_revision", return_value="f" * 40):
+                candidate = packages.inspect_archive(root, body)
+                assert candidate.manifest["core_compatibility"] == {
+                    "mode": "capabilities", "requires": required
+                }
+                for capability, version in required.items():
+                    with patch.dict(packages.CORE_PLUGIN_CAPABILITIES, {capability: version - 1}):
+                        try:
+                            packages.inspect_archive(root, body)
+                        except packages.PluginPackageError as exc:
+                            assert exc.code == "incompatible_core_capability"
+                        else:
+                            raise AssertionError("Missing Core contract accepted")
+        print("Signed package accepts another compatible Core revision and rejects missing contracts: passed")
 
 
 if __name__ == "__main__":

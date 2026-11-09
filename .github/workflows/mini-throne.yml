@@ -74,9 +74,6 @@ jobs:
           path: .core
           persist-credentials: false
       - run: python -m pip install -r scripts/requirements-ci.txt
-      - run: python scripts/check-plugin.py
-        env:
-          CORE_SOURCE: .core
       - name: Require a release from dev
         if: startsWith(github.ref, 'refs/tags/')
         run: git merge-base --is-ancestor HEAD origin/dev
@@ -84,6 +81,10 @@ jobs:
         run: python scripts/build-minishop-plugin.py
         env:
           MINI_THRONE_PLUGIN_SIGNING_KEY: ${{ startsWith(github.ref, 'refs/tags/') && secrets.MINI_THRONE_PLUGIN_SIGNING_KEY || '' }}
+      - run: python scripts/check-plugin.py
+        env:
+          CORE_SOURCE: .core
+          PLUGIN_ARCHIVE: artifacts/mini-throne-plugin-*.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: plugin
