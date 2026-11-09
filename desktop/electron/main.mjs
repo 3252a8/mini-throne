@@ -1,8 +1,9 @@
-import {app,BrowserWindow,ipcMain,safeStorage,shell,nativeImage,Tray,Menu} from 'electron';
+import {app,BrowserWindow,ipcMain,safeStorage,shell,clipboard,nativeImage,Tray,Menu} from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Engine} from './engine.mjs';
+import {importSource,localProxy} from './import-source.mjs';
 import {readNativeModes} from './native-settings.mjs';
 import {Account} from './account.mjs';
 import {download,api} from './http.mjs';
@@ -18,15 +19,17 @@ const demo=!app.isPackaged&&process.argv.includes('--demo');
 const customData=!app.isPackaged?process.argv.find(arg=>arg.startsWith('--data-dir='))?.slice(11):null;
 app.setPath('userData',customData||path.join(app.getPath('appData'),'Mini Throne'));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-  let window,tray,trayConnected=null,trayIcons,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null;
+  let window,tray,trayConnected=null,trayIcons,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null,startup=true;
   const directory=app.getPath('userData');
   let serviceRetryAt=0,serviceRetryDelay=5000;
-  let privateConfig={systemProxy:true,tun:false,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null,selectedProfile:null};
+  let privateConfig={systemProxy:true,tun:false,autoLaunch:true,resumeConnection:false,serviceOrigin:null,localProxy:'',language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null,selectedProfile:null};
   let state={version:app.getVersion(),ready:false,connected:false,busy:false,testing:false,testError:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,traffic:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
-  function publish(){if(tray&&trayIcons&&trayConnected!==state.connected){trayConnected=state.connected;tray.setImage(trayIcons[state.connected?'online':'offline']);tray.setToolTip('Mini Throne · '+(privateConfig.language==='ru'?(state.connected?'Подключено':'Не подключено'):(state.connected?'Connected':'Disconnected')));}state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
-  function capabilities(status){state.tunAvailable=status.capabilities?.tun===true;state.tunConflict=!!status.tun_conflict;if(status.state==='running')state.routeName=status.route?.name||null;}
+  function publish(){if(tray&&trayIcons&&trayConnected!==state.connected){trayConnected=state.connected;tray.setImage(trayIcons[state.connected?'online':'offline']);tray.setToolTip('Mini Throne · '+(privateConfig.language==='ru'?(state.connected?'Подключено':'Не подключено'):(state.connected?'Connected':'Disconnected')));}state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,localProxy:privateConfig.localProxy,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
+  function capabilities(status){if(status.inbound?.port)privateConfig.localProxy=`${status.inbound.address||'127.0.0.1'}:${status.inbound.port}`;state.tunAvailable=status.capabilities?.tun===true;state.tunConflict=!!status.tun_conflict;if(status.state==='running')state.routeName=status.route?.name||null;}
   async function saveConfig(){await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'settings.json'),JSON.stringify(privateConfig),{mode:0o600});}
   function operation(action,{native=false}={}){const next=queue.then(async()=>{if(state.testing)return false;if(state.advanced&&!native){state.error='native_window_open';publish();return false;}state.busy=true;state.error=null;publish();try{return await action();}catch(error){state.error=String(error.message||'operation_failed').replace(/[^a-z0-9_]/gi,'').slice(0,80)||'operation_failed';return false;}finally{state.busy=false;publish();}});queue=next.catch(()=>{});return next;}
+  async function rememberService(origin){privateConfig.serviceOrigin=origin;state.serviceOrigin=origin;await saveConfig();}
+  async function signIn(raw){if(account.value)throw new Error('logout_first');if(await account.login(raw)){await rememberService(account.value.origin);await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=-1;await syncSources();await refresh();}return !!account.value;}
   async function logo(origin,value){
     if(!value)return null;
     try{
@@ -56,8 +59,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     const profiles=state.sourceId===null?[]:await engine.profiles(state.sourceId);
     state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country:country||'',latency:latency_ms,latencyAt:latency_at,type,details}));
     state.active=profiles.length>0;
-    if(!profiles.some(profile=>profile.id===state.selected))state.selected=profiles.find(profile=>profile.id===privateConfig.selectedProfile)?.id??profiles[0]?.id??null;
-    privateConfig.selectedProfile=state.selected;await saveConfig();
+    if(!profiles.some(profile=>profile.id===state.selected))state.selected=profiles.find(profile=>profile.id===privateConfig.selectedProfile)?.id??profiles.find(profile=>profile.name===privateConfig.selectedName)?.id??profiles[0]?.id??null;
+    privateConfig.selectedProfile=state.selected;privateConfig.selectedName=state.profiles.find(p=>p.id===state.selected)?.name||null;await saveConfig();
   }
   function clearProfiles(){state.profiles=[];state.selected=null;state.active=false;}
   async function refresh(){
@@ -101,8 +104,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     }else await engine.call('POST',`/v1/groups/${privateConfig.group}/update`,{timeout:60});
     const profiles=await engine.profiles(privateConfig.group);
     state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type,details}));
-    if(!state.profiles.some(p=>p.id===state.selected))state.selected=state.profiles.find(p=>p.id===privateConfig.selectedProfile)?.id??state.profiles.find(p=>p.name===previousName)?.id??state.profiles[0]?.id??null;
-    privateConfig.selectedProfile=state.selected;await saveConfig();
+    if(!state.profiles.some(p=>p.id===state.selected))state.selected=state.profiles.find(p=>p.id===privateConfig.selectedProfile)?.id??state.profiles.find(p=>p.name===(previousName||privateConfig.selectedName))?.id??state.profiles[0]?.id??null;
+    privateConfig.selectedProfile=state.selected;privateConfig.selectedName=state.profiles.find(p=>p.id===state.selected)?.name||null;await saveConfig();
     if(resume&&state.selected!==null){await engine.connect(state.selected,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
     serviceRetryAt=0;serviceRetryDelay=5000;
   }
@@ -136,6 +139,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   app.whenReady().then(async()=>{
     await fs.mkdir(directory,{recursive:true});
     try{const stored=JSON.parse(await fs.readFile(path.join(directory,'settings.json'),'utf8'));privateConfig={...privateConfig,...stored};}catch{}
+    if(app.isPackaged)app.setLoginItemSettings({openAtLogin:privateConfig.autoLaunch,args:['--autostart','--hidden']});
+    state.serviceOrigin=privateConfig.serviceOrigin;
     privateConfig.tun=privateConfig.tun===true;if(privateConfig.tun)privateConfig.systemProxy=false;
     window=new BrowserWindow({width:460,height:820,minWidth:390,minHeight:650,show:false,title:'Mini Throne',backgroundColor:'#060b0e',autoHideMenuBar:true,webPreferences:{preload:path.join(here,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
     window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
@@ -148,12 +153,14 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     account=new Account({directory,safeStorage,openBrowser:url=>shell.openExternal(url),onLogin:value=>{state.login=value;publish();}});
     await account.load();
     state.origin=account.value?.origin||null;
+    if(account.value)await rememberService(account.value.origin);
+    handle('mini:clipboard',()=>{const text=clipboard.readText();return Buffer.byteLength(text)<=2097152?text:'';});
     handle('mini:state',()=>{publish();return state;});
-    handle('mini:login',raw=>{if(typeof raw!=='string'||raw.length>2048)return false;return operation(async()=>{if(account.value)throw new Error('logout_first');if(await account.login(raw)){await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=-1;await syncSources();await refresh();}});});
+    handle('mini:login',raw=>{if(typeof raw!=='string'||raw.length>2048)return false;return operation(async()=>{return signIn(raw);});});
     handle('mini:cancel-login',()=>{account.cancel();state.login=null;publish();});
-    handle('mini:connect',id=>operation(async()=>{if(!state.profiles.some(p=>p.id===id)||!state.active)throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;await saveConfig();await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}));
-    handle('mini:select-profile',id=>operation(async()=>{if(!state.profiles.some(profile=>profile.id===id))throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;await saveConfig();if(state.connected)await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);return true;}));
-    handle('mini:disconnect',()=>operation(async()=>{await engine.disconnect();state.connected=false;}));
+    handle('mini:connect',id=>operation(async()=>{if(!state.profiles.some(p=>p.id===id)||!state.active)throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;privateConfig.selectedName=state.profiles.find(p=>p.id===id)?.name||null;await saveConfig();await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);state.connected=true;privateConfig.resumeConnection=true;await saveConfig();}));
+    handle('mini:select-profile',id=>operation(async()=>{if(!state.profiles.some(profile=>profile.id===id))throw new Error('invalid_profile');state.selected=id;privateConfig.selectedProfile=id;privateConfig.selectedName=state.profiles.find(p=>p.id===id)?.name||null;await saveConfig();if(state.connected)await engine.connect(id,privateConfig.systemProxy,privateConfig.tun);return true;}));
+    handle('mini:disconnect',()=>operation(async()=>{privateConfig.resumeConnection=false;await saveConfig();await engine.disconnect();state.connected=false;}));
     handle('mini:refresh',()=>operation(refresh));
     handle('mini:test-latency',async()=>{
       if(state.testing||state.busy||!state.ready||state.advanced||!state.profiles.length)return false;
@@ -170,14 +177,17 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     handle('mini:renew',()=>{if(!account.value)throw new Error('login_required');return shell.openExternal(renewalUrl(account.value.origin));});
     handle('mini:add-source',input=>operation(async()=>{
       if(!input||typeof input!=='object')throw new Error('invalid_import');
-      const id=await engine.addSource(input);
+      const source=importSource(input.text);
+      if(source.origin)return signIn(source.origin);
+      const id=await engine.addSource(source);
+      privateConfig.resumeConnection=false;privateConfig.selectedName=null;
       privateConfig.manualGroups.push(id);await saveConfig();
-      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;
+      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;privateConfig.selectedName=null;privateConfig.resumeConnection=false;
       await syncSources();await loadManual();return true;
     }));
     handle('mini:select-source',id=>operation(async()=>{
       if(!state.sources.some(source=>source.id===id))throw new Error('invalid_source');
-      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;
+      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;privateConfig.selectedName=null;privateConfig.resumeConnection=false;
       await syncSources();if(id===-1)await refresh();else await loadManual();return true;
     }));
     handle('mini:remove-source',id=>operation(async()=>{
@@ -188,7 +198,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       privateConfig.manualGroups=privateConfig.manualGroups.filter(value=>value!==id);
       await syncSources();if(state.sourceId===-1)await refresh();else await loadManual();return true;
     }));
-    handle('mini:logout',()=>operation(async()=>{await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],traffic:null,expiresAt:null,branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});await syncSources();await loadManual();}));
+    handle('mini:logout',()=>operation(async()=>{privateConfig.resumeConnection=false;await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],traffic:null,expiresAt:null,branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});await syncSources();await loadManual();}));
     handle('mini:settings',values=>operation(async()=>{
       if(!values||typeof values!=='object')throw new Error('invalid_settings');
       if(typeof values.systemProxy==='boolean'||typeof values.tun==='boolean'){
@@ -207,7 +217,8 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
           if(Number.isInteger(running)){await engine.connect(running,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
         }
       }
-      if(typeof values.autoLaunch==='boolean'){privateConfig.autoLaunch=values.autoLaunch;app.setLoginItemSettings({openAtLogin:values.autoLaunch});}
+      if(typeof values.localProxy==='string'){const endpoint=localProxy(values.localProxy);const running=state.connected?state.selected:null;await engine.configureProxy(endpoint);privateConfig.localProxy=`${endpoint.address}:${endpoint.port}`;state.connected=false;await saveConfig();if(running!==null){await engine.connect(running,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}}
+      if(typeof values.autoLaunch==='boolean'){privateConfig.autoLaunch=values.autoLaunch;app.isPackaged&&app.setLoginItemSettings({openAtLogin:values.autoLaunch,args:['--autostart','--hidden']});}
       if(['ru','en'].includes(values.language))privateConfig.language=values.language;
       await saveConfig();
     }));
@@ -227,15 +238,18 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     if(app.isPackaged)app.setAsDefaultProtocolClient('mini-throne');
     if(demo){Object.assign(state,{ready:true,active:true,sources:[{id:-1,name:'/service',subscription:true,count:4,service:true}],sourceId:-1,branding:{...normalizeBranding({name:'/service'}),logo:null},traffic:{used_bytes:291786752,limit_bytes:27917287424},origin:'https://vpn.example.com',expiresAt:'2026-12-09T00:00:00Z',profiles:[{id:1,name:'🇳🇱 Нидерланды',country:'NL',latency:42,type:'vless'},{id:2,name:'🇩🇪 Германия',country:'DE',latency:57,type:'vless'},{id:3,name:'🇸🇪 Швеция',country:'SE',latency:68,type:'vless'},{id:4,name:'🇫🇮 Финляндия',country:'FI',latency:76,type:'vless'}],selected:1});publish();return;}
     engine=new Engine({ruleDirectory:app.isPackaged?path.join(process.resourcesPath,'rules'):path.join(here,'../assets/rules'),runtime:app.isPackaged?path.join(process.resourcesPath,'engine'):path.join(here,'../runtime'),data:path.join(directory,'engine'),guard:app.isPackaged?path.join(process.resourcesPath,'ProxyGuard.exe'):path.join(here,'../native/bin/ProxyGuard.exe'),onExit:({native})=>{state.connected=false;if(native&&!quitting&&!nativeTransition)void operation(()=>returnFromNative(),{native:true});else if(!quitting&&!nativeTransition)state.error='engine_stopped';publish();}});
-    updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;try{await shutdown();}catch(error){quitting=false;throw error;}},isConnected:()=>!state.ready||state.connected||state.busy||state.advanced||state.testing});
+    updater=await updates({app,onState:value=>{state.update=value;if(startup&&['downloading','verifying','countdown','installing'].includes(value.status))window.show();publish();},beforeInstall:async()=>{quitting=true;try{await shutdown();}catch(error){quitting=false;throw error;}},isConnected:()=>!startup&&(!state.ready||state.connected||state.busy||state.advanced||state.testing)});
+    await updater.startup;
+    startup=false;
     await operation(async()=>{
       const started=await engine.start();capabilities(started);state.ready=true;
-      try{await consumeEnrollment({directory,account,request:api});}
+      try{await consumeEnrollment({directory,account,request:api,onOrigin:rememberService});}
       catch{state.error='enrollment_failed';}
       state.origin=account.value?.origin||null;
       await syncSources();
       if(state.sourceId===-1)await refresh();else await loadManual();
       if(privateConfig.tun){try{capabilities(await engine.setTun(true));}catch(error){state.error=error.code||'needs_privileges';}}
+      if((privateConfig.resumeConnection||process.argv.includes('--autostart'))&&state.active&&state.selected!==null&&!state.error){await engine.connect(state.selected,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
     });
     const initialLink=process.argv.find(arg=>arg.startsWith('mini-throne:'));if(initialLink)link(initialLink);
     setInterval(async()=>{if(polling||state.busy||state.advanced||!state.ready||quitting)return;polling=true;try{const status=await engine.status();if(state.advanced||state.busy)return;capabilities(status);state.connected=status.state==='running';if(!state.connected)await engine.disableProxy();if(status.profile)state.selected=status.profile.id;publish();}catch{if(!state.advanced&&!state.busy){state.connected=false;state.error='engine_unavailable';publish();}}finally{polling=false;}},2500).unref();

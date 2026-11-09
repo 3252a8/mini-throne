@@ -40,3 +40,33 @@ assert.deepEqual(profileDetails('custom',{config:JSON.stringify(automatic)}),{la
 assert.deepEqual(profileDetails('custom',{config:'broken'}),{labels:[],automatic:false});
 assert.ok(!JSON.stringify(profileDetails('vless',tlsServer)).includes('private'));
 console.log('Protocol, transport, security and automatic-route labels without credentials: passed');
+
+const {importSource,localProxy}=await import('../electron/import-source.mjs');
+const {consumeEnrollment,parseInstallerFilename}=await import('../electron/enrollment.mjs');
+const fs=await import('node:fs/promises'),os=await import('node:os'),path=await import('node:path');
+for(const text of ['vless://synthetic@example.com:443#Test','trojan://synthetic@example.com:443#Test'])assert.equal(importSource(text).kind,'servers');
+assert.equal(importSource('https://example.com/sub').kind,'subscription');
+assert.equal(importSource('http://127.0.0.1:12345/#Proxy').kind,'servers');
+assert.equal(importSource('http://127.0.0.1:12345/#Proxy\nvless://synthetic@example.com:443#Test').kind,'servers');
+assert.equal(importSource(JSON.stringify(full)).kind,'json');
+assert.equal(importSource(Buffer.from('vless://synthetic@example.com:443#Test').toString('base64')).text,'vless://synthetic@example.com:443#Test');
+assert.equal(importSource('mini-throne://connect?instance=https%3A%2F%2Fexample.com').origin,'https://example.com');
+assert.equal(importSource('mini-throne://import/https://example.com/sub').kind,'subscription');
+for(const value of ['',null,'x'.repeat(2097153)])assert.throws(()=>importSource(value));
+assert.deepEqual(localProxy('localhost:10808'),{address:'127.0.0.1',port:10808});
+for(const value of ['0.0.0.0:10808','evil.example:80','127.0.0.1:0','127.0.0.1:65536','127.0.0.1:1/path'])assert.throws(()=>localProxy(value));
+const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mini-enrollment-'));
+try{
+  const filename=`Mini-Throne-Setup--mt1.${Buffer.from('https://example.com').toString('base64url')}.${'a'.repeat(43)} (1).exe`;
+  assert.equal(parseInstallerFilename(filename).origin,'https://example.com');
+  await fs.writeFile(path.join(directory,'pending-installer.txt'),filename,'utf16le');
+  let savedOrigin=null;
+  await assert.rejects(consumeEnrollment({directory,account:{value:null},onOrigin:async origin=>{savedOrigin=origin;},request:async()=>{throw new Error('expired');}}));
+  assert.equal(savedOrigin,'https://example.com');
+  await assert.rejects(fs.stat(path.join(directory,'pending-installer.txt')));
+  await fs.writeFile(path.join(directory,'pending-installer.txt'),filename,'utf16le');
+  const account={value:{origin:'https://existing.example'}};
+  await consumeEnrollment({directory,account,request:async()=>{throw new Error('must_not_redeem_twice');}});
+  assert.equal(account.value.origin,'https://existing.example');
+}finally{await fs.rm(directory,{recursive:true,force:true});}
+console.log('Automatic import formats, loopback proxy, installer origin and one-time enrollment: passed');

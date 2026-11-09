@@ -116,7 +116,7 @@ async def body(request: web.Request) -> dict:
 
 class MiniThronePlugin(Plugin):
     name = "mini-throne"
-    version = "0.1.8"
+    version = "0.1.9"
     plugin_api_min_version = 1
     plugin_api_max_version = 1
 

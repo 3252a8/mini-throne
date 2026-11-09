@@ -1,10 +1,12 @@
-Mini Throne 0.1.8 fixes automatic-route probes and preserves service animation.
+Mini Throne 0.1.9 simplifies setup and updates automatically before connecting.
 
-- Wait for the first routing observations before the first connection and before measuring full Xray configurations with automatic balancers. Keep the subscription's routing and observation settings intact.
-- Bundle verified geoip.dat and geosite.dat databases, so JSON routes do not need a separate first-run download. Preserve custom user databases.
-- Show protocol, transport and security details in the server picker, including the protocols used by automatic routes.
-- Preserve animated WebP service logos instead of converting them to a static PNG.
-- Keep successful sub-millisecond probes distinct from unmeasured profiles.
+- One active add button in an empty app. Paste from the clipboard into a single field; subscription URLs, individual servers, complete Xray JSON, exported links and deep links are recognized automatically.
+- Reuse dialogs and icons with an accessible close button. Keep the compact layout on wide windows.
+- Remember the service address from a personalized installer even if its one-time ticket expires; updates preserve the account and service address.
+- Enable launch with Windows for new installations. Reconnect to the saved server on Windows startup or after restarting a connected app; retain explicit existing launch preferences.
+- Configure the loopback HTTP/SOCKS5 proxy endpoint at the bottom of settings. Occupied ports are rejected before disconnecting.
+- Check for updates before connecting, show download and installation progress, and apply the signed differential update automatically. If checking fails, open the installed app and retry in the background.
 
-Windows x64. The Throne 1.4.1 Qt engine remains pinned; ThroneCore is rebuilt from the corresponding sources with the routing-probe fix. GitHub Actions builds and signs release metadata and the plugin archive.
-Existing accounts, subscriptions, manual servers and routing settings are preserved. The EXE is not Authenticode signed; SmartScreen may show an unknown publisher.
+The companion plugin remains compatible with the existing installation API and refreshes application releases automatically. The related Minishop Core dev update preserves plugin request parameters through Google, Yandex, Discord, Telegram, email, password and passkey sign-in. This authentication fix requires updating the Minishop application, not just the plugin.
+
+Windows x64. Throne 1.4.1 and the routing fixes from 0.1.8 are retained. Existing accounts, subscriptions, servers and routes are preserved. The EXE is not Authenticode signed.

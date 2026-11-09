@@ -1,5 +1,6 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('miniThrone',Object.freeze({
+  clipboard:()=>ipcRenderer.invoke('mini:clipboard'),
   state:()=>ipcRenderer.invoke('mini:state'),
   login:origin=>ipcRenderer.invoke('mini:login',origin),
   cancelLogin:()=>ipcRenderer.invoke('mini:cancel-login'),

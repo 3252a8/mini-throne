@@ -155,6 +155,14 @@ export class Engine {
     const route=routes.find(r=>r.name===name)||(await this.call('POST','/v1/routes',{name,kind:'raw',raw_route:JSON.stringify({rules:[],final:-1}),default_outbound:-1,prevent_modifications:false})).route;
     return route.id;
   }
+  async configureProxy({address,port}) {
+    const previous=(await this.call('GET','/v1/settings')).settings;
+    if(previous.inbound_address===address&&previous.inbound_port===port)return;
+    // Check before interrupting a working connection. Never silently pick another port.
+    await new Promise((resolve,reject)=>{const probe=net.createServer();probe.once('error',()=>reject(new Error('proxy_port_unavailable')));probe.listen(port,address,()=>probe.close(resolve));});
+    await this.disconnect();
+    await this.call('PUT','/v1/settings',{settings:{inbound_enabled:true,inbound_address:address,inbound_port:port}});
+  }
   async connect(id,systemProxy=true,tun=false) {
     const before=await this.status();
     if(before.tun!==tun)await this.setTun(tun);

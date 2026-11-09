@@ -7,7 +7,7 @@ import path from 'node:path';
 import http from 'node:http';
 import {fileURLToPath} from 'node:url';
 import {deriveKeys,seal,open} from '../electron/throne-api.mjs';
-import {Engine,RUSSIA_ROUTE} from '../electron/engine.mjs';
+import {Engine,RUSSIA_ROUTE,freePort} from '../electron/engine.mjs';
 
 async function checkRuntime(){
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -18,6 +18,33 @@ let engine,code=0;
 const servers=[];
 try{
   await app.whenReady();
+  const {updates}=await import('../electron/updates.mjs');
+  const {EventEmitter}=await import('node:events');
+  const fakeApp=new EventEmitter();fakeApp.isPackaged=true;fakeApp.getVersion=()=> '0.1.0';
+  for(const failure of [false,true]){
+    const states=[];
+    const update=await updates({app:fakeApp,onState:s=>states.push(s.status),beforeInstall:async()=>assert.fail('no install expected'),isConnected:()=>false,updater:new EventEmitter(),releaseLoader:async()=>{if(failure)throw Error('offline');return {version:'0.1.0'};}});
+    assert.equal(await update.startup,failure?'error':'current');
+    assert.equal(states[0],'checking');
+    fakeApp.emit('before-quit');
+  }
+
+  {
+    const {createHash}=await import('node:crypto');
+    const file=path.join(directory,'synthetic-installer.exe'),bytes=Buffer.from('synthetic update fixture');await fs.writeFile(file,bytes);
+    const expected={size:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex'),sha512:createHash('sha512').update(bytes).digest('base64')};
+    const driver=new EventEmitter(),states=[];let installed;
+    const completed=new Promise(resolve=>{installed=resolve;});
+    driver.setFeedURL=()=>{};
+    driver.checkForUpdates=async()=>({updateInfo:{version:'0.1.1',files:[{url:'Mini-Throne-Setup-x64.exe',...expected}]}});
+    driver.downloadUpdate=async()=>{driver.emit('download-progress',{percent:50,transferred:bytes.length/2,total:bytes.length,bytesPerSecond:1024});return [file];};
+    driver.quitAndInstall=(silent,restart)=>{assert.equal(silent,false);assert.equal(restart,true);installed();};
+    await updates({app:fakeApp,onState:s=>states.push(s.status),beforeInstall:async()=>{},isConnected:()=>false,updater:driver,releaseLoader:async()=>({version:'0.1.1',files:{'Mini-Throne-Setup-x64.exe':expected}})});
+    let deadline;
+    await Promise.race([completed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(Error('Automatic install did not start')),10000);})]).finally(()=>clearTimeout(deadline));
+    assert.ok(['checking','downloading','verifying','countdown','installing'].every(status=>states.includes(status)));
+    fakeApp.emit('before-quit');
+  }
   const vectors=JSON.parse(await fs.readFile(new URL('./fixtures/throne-api-v1.json',import.meta.url),'utf8'));
   let frames=0,rejections=0;
   for(const sample of vectors.cases){
@@ -73,7 +100,11 @@ try{
   subscriptionText=httpLink.replace('Manual%20HTTP','Subscription%202');
   await engine.call('POST',`/v1/groups/${subscription}/update`,{timeout:60});
   assert.equal((await engine.profiles(subscription))[0].name,'Subscription 2');
+  const customPort=await freePort();
+  await engine.configureProxy({address:'127.0.0.1',port:customPort});
+  await assert.rejects(engine.configureProxy({address:'127.0.0.1',port:proxyPort}),/proxy_port_unavailable/);
   const connected=await engine.connect(chosen.id,false);
+  assert.equal(connected.inbound.port,customPort);
   const body=await new Promise((resolve,reject)=>{
     const request=http.get({hostname:'127.0.0.1',port:connected.inbound.port,path:'http://203.0.113.42/probe'},response=>{let text='';response.on('data',chunk=>text+=chunk);response.on('end',()=>resolve(text));});
     request.on('error',reject);request.setTimeout(10000,()=>request.destroy(new Error('Proxy traffic timeout')));

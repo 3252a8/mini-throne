@@ -15,7 +15,7 @@ export function parseInstallerFilename(filename) {
   return {origin,ticket:match[2]};
 }
 
-export async function consumeEnrollment({directory,account,request}) {
+export async function consumeEnrollment({directory,account,request,onOrigin=async()=>{}}) {
   const pending=path.join(directory,'pending-installer.txt');
   const legacy=path.join(directory,'pending-enrollment.json');
   try{
@@ -36,6 +36,7 @@ export async function consumeEnrollment({directory,account,request}) {
         enrollment.origin=instanceOrigin(enrollment.origin);
       }catch(legacyError){if(legacyError.code==='ENOENT')return;throw legacyError;}
     }
+    await onOrigin(enrollment.origin);
     const {data}=await request(enrollment.origin,'/api/plugins/mini-throne/v1/enroll/redeem',{method:'POST',body:{ticket:enrollment.ticket}});
     account.setTokens(enrollment.origin,data);
     await account.save();
