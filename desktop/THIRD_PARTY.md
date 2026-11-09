@@ -7,6 +7,10 @@ repository root. Redistributed engine archives retain their license files.
 
 Throne's wire protocol is documented at https://github.com/throneproj/Throne-api
 (MIT). The client implementation here is independently written from that protocol.
+Its official wire vectors and MIT notice are retained under `scripts/fixtures/`
+for checks inside Electron. `@noble/ciphers` (MIT, https://github.com/paulmillr/noble-ciphers)
+provides ChaCha20-Poly1305 because Electron's native crypto does not expose it.
+This encrypts local control messages; VPN traffic remains in the original engine.
 Electron, React, Vite and electron-builder retain their respective upstream licenses
 in the packaged dependency tree. Do not remove Electron's LICENSES.chromium.html.
 

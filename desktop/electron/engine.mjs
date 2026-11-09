@@ -65,6 +65,23 @@ export class Engine {
   call(method,path,body,query) {if(!this.connection)throw new Error('engine_unavailable');return request(this.connection,method,path,body,query);}
   status(){return this.call('GET','/v1/status');}
   async profiles(group) {const result=await this.call('GET','/v1/profiles',undefined,{group:String(group)});return result.profiles;}
+  async addSource({kind,name,text}) {
+    if(!['subscription','servers'].includes(kind)||typeof text!=='string'||!text.trim()||Buffer.byteLength(text)>262144||typeof name!=='string'||name.length>80)throw new Error('invalid_import');
+    text=text.trim();name=name.trim();
+    if(kind==='subscription'){
+      const url=new URL(text);
+      if(!['https:','http:'].includes(url.protocol)||url.hash||/\s/.test(text))throw new Error('invalid_subscription');
+      return this.replaceSubscription({name:name||url.hostname,url:url.href});
+    }
+    const links=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+    if(links.length>200||links.some(link=>!/^[-a-z0-9+]+:\/\//i.test(link)||/^(file|javascript|data):/i.test(link)))throw new Error('invalid_import');
+    const {group}=await this.call('POST','/v1/groups',{name:name||'Servers',route_id:this.routeId});
+    try{
+      const result=await this.call('POST','/v1/import',{as:'profiles',text:links.join('\n'),group:group.id,timeout:60});
+      if(!result.imported||result.failed)throw new Error('invalid_import');
+      return group.id;
+    }catch(error){await this.call('DELETE',`/v1/groups/${group.id}`).catch(()=>{});throw error;}
+  }
   async replaceSubscription({name,url},oldGroup) {
     const result=await this.call('POST','/v1/groups',{name,url,auto_update:true,update:true,route_id:this.routeId,import_route:false,timeout:60});
     const id=result.group.id;

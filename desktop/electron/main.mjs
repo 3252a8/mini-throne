@@ -16,8 +16,8 @@ app.setPath('userData',customData||path.join(app.getPath('appData'),'Mini Throne
 if(!app.requestSingleInstanceLock()){app.quit();}else{
   let window,tray,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false;
   const directory=app.getPath('userData');
-  let privateConfig={systemProxy:true,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null};
-  let state={version:app.getVersion(),ready:false,connected:false,busy:false,profiles:[],selected:null,branding:null,origin:null,expiresAt:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo};
+  let privateConfig={systemProxy:true,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null};
+  let state={version:app.getVersion(),ready:false,connected:false,busy:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo};
   function publish(){state.settings={systemProxy:privateConfig.systemProxy,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
   async function saveConfig(){await fs.mkdir(directory,{recursive:true});await fs.writeFile(path.join(directory,'settings.json'),JSON.stringify(privateConfig),{mode:0o600});}
   function operation(action){const next=queue.then(async()=>{state.busy=true;state.error=null;publish();try{return await action();}catch(error){state.error=String(error.message||'operation_failed').replace(/[^a-z0-9_]/gi,'').slice(0,80)||'operation_failed';return false;}finally{state.busy=false;publish();}});queue=next.catch(()=>{});return next;}
@@ -35,7 +35,33 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       return decoded.resize({width:96,height:96,quality:'good'}).toDataURL();
     }catch{return null;}
   }
+  async function syncSources(){
+    const {groups}=await engine.call('GET','/v1/groups');
+    const ids=Array.isArray(privateConfig.manualGroups)?privateConfig.manualGroups:[];
+    const manual=groups.filter(group=>ids.includes(group.id)&&group.id!==privateConfig.group&&!group.archived);
+    privateConfig.manualGroups=manual.map(group=>group.id);
+    state.sources=manual.map(group=>({id:group.id,name:group.name,subscription:group.subscription,count:group.profile_count,service:false}));
+    if(account.value)state.sources.unshift({id:-1,name:state.branding?.name||'Minishop',subscription:true,count:0,service:true});
+    if(!state.sources.some(source=>source.id===privateConfig.sourceId))privateConfig.sourceId=state.sources[0]?.id??null;
+    state.sourceId=privateConfig.sourceId;
+    await saveConfig();
+  }
+  async function loadManual(){
+    if(state.sourceId===-1)return;
+    const profiles=state.sourceId===null?[]:await engine.profiles(state.sourceId);
+    state.profiles=profiles.map(({id,name,country,latency_ms,type})=>({id,name,country:country||'',latency:latency_ms,type}));
+    state.active=profiles.length>0;
+    if(!profiles.some(profile=>profile.id===state.selected))state.selected=profiles[0]?.id??null;
+  }
+  function clearProfiles(){state.profiles=[];state.selected=null;state.active=false;}
   async function refresh(){
+    try{
+      if(state.sourceId!==null&&state.sourceId!==-1){
+        if(state.sources.find(source=>source.id===state.sourceId)?.subscription)await engine.call('POST',`/v1/groups/${state.sourceId}/update`,{timeout:60});
+      }else await refreshService();
+    }finally{await syncSources();await loadManual();}
+  }
+  async function refreshService(){
     if(!account.value)return;
     state.origin=account.value.origin;
     let data;
@@ -87,13 +113,34 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     if(!icon.isEmpty()){tray=new Tray(icon);tray.setToolTip('Mini Throne');tray.setContextMenu(Menu.buildFromTemplate([{label:'Mini Throne',click:()=>window.show()},{label:privateConfig.language==='ru'?'Выход':'Quit',click:()=>app.quit()}]));tray.on('click',()=>window.show());}
     account=new Account({directory,safeStorage,openBrowser:url=>shell.openExternal(url),onLogin:value=>{state.login=value;publish();}});
     await account.load();
+    state.origin=account.value?.origin||null;
     handle('mini:state',()=>{publish();return state;});
-    handle('mini:login',raw=>{if(typeof raw!=='string'||raw.length>2048)return false;return operation(async()=>{if(account.value)throw new Error('logout_first');if(await account.login(raw))await refresh();});});
+    handle('mini:login',raw=>{if(typeof raw!=='string'||raw.length>2048)return false;return operation(async()=>{if(account.value)throw new Error('logout_first');if(await account.login(raw)){await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=-1;await syncSources();await refresh();}});});
     handle('mini:cancel-login',()=>{account.cancel();state.login=null;publish();});
     handle('mini:connect',id=>operation(async()=>{if(!state.profiles.some(p=>p.id===id)||!state.active)throw new Error('invalid_profile');state.selected=id;await engine.connect(id,privateConfig.systemProxy);state.connected=true;}));
     handle('mini:disconnect',()=>operation(async()=>{await engine.disconnect();state.connected=false;}));
     handle('mini:refresh',()=>operation(refresh));
-    handle('mini:logout',()=>operation(async()=>{await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});}));
+    handle('mini:add-source',input=>operation(async()=>{
+      if(!input||typeof input!=='object')throw new Error('invalid_import');
+      const id=await engine.addSource(input);
+      privateConfig.manualGroups.push(id);await saveConfig();
+      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;
+      await syncSources();await loadManual();return true;
+    }));
+    handle('mini:select-source',id=>operation(async()=>{
+      if(!state.sources.some(source=>source.id===id))throw new Error('invalid_source');
+      await engine.disconnect();state.connected=false;clearProfiles();privateConfig.sourceId=id;
+      await syncSources();if(id===-1)await refresh();else await loadManual();return true;
+    }));
+    handle('mini:remove-source',id=>operation(async()=>{
+      if(!privateConfig.manualGroups.includes(id))throw new Error('invalid_source');
+      if(state.sourceId===id){await engine.disconnect();state.connected=false;}
+      await engine.call('DELETE',`/v1/groups/${id}`);
+      if(state.sourceId===id)clearProfiles();
+      privateConfig.manualGroups=privateConfig.manualGroups.filter(value=>value!==id);
+      await syncSources();if(state.sourceId===-1)await refresh();else await loadManual();return true;
+    }));
+    handle('mini:logout',()=>operation(async()=>{await engine.disconnect();const revoked=await account.logout();if(Number.isInteger(privateConfig.group))await engine.call('DELETE',`/v1/groups/${privateConfig.group}`);privateConfig.group=null;privateConfig.subscriptionHash=null;await saveConfig();Object.assign(state,{connected:false,profiles:[],branding:null,origin:null,active:false,selected:null,login:null,error:revoked?null:'offline_logout'});await syncSources();await loadManual();}));
     handle('mini:settings',values=>operation(async()=>{
       if(!values||typeof values!=='object')throw new Error('invalid_settings');
       if(typeof values.systemProxy==='boolean'){privateConfig.systemProxy=values.systemProxy;if(state.connected){if(values.systemProxy)await engine.enableProxy((await engine.status()).inbound.port);else await engine.disableProxy();}}
@@ -110,11 +157,13 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       await engine.start();state.ready=true;
       try{await consumeEnrollment({directory,account,request:api});}
       catch{state.error='enrollment_failed';}
-      if(account.value)await refresh();
+      state.origin=account.value?.origin||null;
+      await syncSources();
+      if(state.sourceId===-1)await refresh();else await loadManual();
     });
     updater=await updates({app,onState:value=>{state.update=value;publish();},beforeInstall:async()=>{quitting=true;await shutdown();},isConnected:()=>state.connected||state.busy});
     const initialLink=process.argv.find(arg=>arg.startsWith('mini-throne:'));if(initialLink)link(initialLink);
     setInterval(async()=>{if(polling||state.busy||!state.ready||quitting)return;polling=true;try{const status=await engine.status();state.connected=status.state==='running';if(!state.connected)await engine.disableProxy();if(status.profile)state.selected=status.profile.id;publish();}catch{state.connected=false;state.error='engine_unavailable';publish();}finally{polling=false;}},2500).unref();
-    setInterval(()=>{if(account.value&&!state.busy)void operation(refresh);},3600000).unref();
+    setInterval(()=>{if(state.sources.length&&!state.busy)void operation(refresh);},3600000).unref();
   }).catch(()=>{state.error='startup_failed';publish();});
 }

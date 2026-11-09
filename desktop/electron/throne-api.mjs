@@ -1,5 +1,6 @@
 import net from 'node:net';
-import {createHmac, createCipheriv, createDecipheriv, randomBytes} from 'node:crypto';
+import {createHmac, randomBytes} from 'node:crypto';
+import {chacha20poly1305} from '@noble/ciphers/chacha.js';
 
 export function deriveKeys(key, serverHello, clientRandom) {
   if (key.length !== 32 || serverHello.length !== 16 || clientRandom.length !== 16) throw new Error('Invalid API key or hello');
@@ -8,17 +9,14 @@ export function deriveKeys(key, serverHello, clientRandom) {
 export function seal(key, counter, plaintext) {
   const length = Buffer.alloc(4); length.writeUInt32BE(plaintext.length + 16);
   const nonce = Buffer.alloc(12); nonce.writeBigUInt64BE(BigInt(counter), 4);
-  const cipher = createCipheriv('chacha20-poly1305', key, nonce, {authTagLength:16});
-  cipher.setAAD(length, {plaintextLength:plaintext.length});
-  return Buffer.concat([length, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]);
+  // Electron's BoringSSL does not expose ChaCha20-Poly1305 through node:crypto.
+  // Keep the exact Throne wire format using a portable authenticated cipher.
+  return Buffer.concat([length, chacha20poly1305(key, nonce, length).encrypt(plaintext)]);
 }
 export function open(key, counter, frame) {
   if (frame.length < 20 || frame.readUInt32BE() !== frame.length - 4 || frame.length > 67108868) throw new Error('Invalid frame length');
   const nonce = Buffer.alloc(12); nonce.writeBigUInt64BE(BigInt(counter), 4);
-  const cipher = createDecipheriv('chacha20-poly1305', key, nonce, {authTagLength:16});
-  cipher.setAAD(frame.subarray(0,4), {plaintextLength:frame.length - 20});
-  cipher.setAuthTag(frame.subarray(-16));
-  return Buffer.concat([cipher.update(frame.subarray(4,-16)), cipher.final()]);
+  return Buffer.from(chacha20poly1305(key, nonce, frame.subarray(0,4)).decrypt(frame.subarray(4)));
 }
 
 // One authenticated exchange per connection: no replay counters shared across callers.

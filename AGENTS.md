@@ -9,5 +9,6 @@ Develop on `dev`. Publish the same commit to the configured GitLab and GitHub re
 GitLab first. Never publish inherited upstream tags or run upstream release workflows.
 Keep access tokens in Windows DPAPI storage, never renderer state, logs or deep links.
 User-facing strings must support Russian and English. Validate with `npm run check`
-and `npm run build` in `desktop/`; inspect signed plugin archives with Core's installer.
+and `npm run build` in `desktop/`, then `npm run check:runtime` for engine/transport
+changes; inspect signed plugin archives with Core's installer.
 No production deployments are part of a local test build.
