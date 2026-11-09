@@ -1,7 +1,7 @@
 {
   "name": "mini-throne",
   "productName": "Mini Throne",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A simple Windows client for Minishop, powered by Throne",
   "author": "3252a8",
   "license": "GPL-3.0-only",

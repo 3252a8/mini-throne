@@ -63,5 +63,7 @@ func urlTest(ctx context.Context, client *http.Client, url string, timeout time.
 		return 0, err
 	}
 	_ = resp.Body.Close()
-	return time.Since(begin), nil
+	// The desktop API reserves 0 ms for an unmeasured profile. Keep successful
+	// sub-millisecond probes distinct from that sentinel when serialized as ms.
+	return max(time.Since(begin), time.Millisecond), nil
 }
