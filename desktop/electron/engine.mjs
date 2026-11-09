@@ -69,6 +69,12 @@ export class Engine {
       const [inbound,dns,api]=[...ports];
       await this.call('PUT','/v1/settings',{settings:{inbound_enabled:true,inbound_address:'127.0.0.1',inbound_port:inbound,dns_in_port:dns,clash_api_port:0,singbox_api_port:api,sub_auto_update:60,sub_respect_server_interval:true,log_level:'warn',remember_enable:false}});
     }
+    // The upstream HTTP probe can be filtered by full service JSON routes.
+    // Migrate only the upstream default; retain custom tests from Throne.
+    const currentSettings=(await this.call('GET','/v1/settings')).settings;
+    if(currentSettings.test_url==='http://cp.cloudflare.com/'){
+      await this.call('PUT','/v1/settings',{settings:{test_url:'https://www.gstatic.com/generate_204',...(currentSettings.test_timeout_ms===3000?{test_timeout_ms:5000}:{})}});
+    }
     await this.call('PUT','/v1/modes',{tun:false});
     const {routes}=await this.call('GET','/v1/routes');
     const found=routes.find(route=>route.name===RUSSIA_ROUTE.name);

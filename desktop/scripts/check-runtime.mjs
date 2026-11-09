@@ -39,6 +39,7 @@ try{
   const status=await engine.start();
   assert.ok(status.core);
   assert.equal(status.state,'idle');
+  assert.equal((await engine.call('GET','/v1/settings')).settings.test_url,'https://www.gstatic.com/generate_204');
   assert.equal((await engine.setTun(false)).tun,false);
   if(!status.capabilities?.tun){
     await assert.rejects(engine.setTun(true),error=>error.code==='needs_privileges');
@@ -101,6 +102,7 @@ try{
   await engine.shutdown();
   await engine.start();
   assert.equal((await engine.call('GET','/v1/settings')).settings.log_level,'error');
+  assert.equal((await engine.call('GET','/v1/settings')).settings.test_url,`http://127.0.0.1:${proxyPort}/ping`);
   assert.equal((await engine.status()).route.id,customRoute.id);
   assert.equal((await engine.call('GET','/v1/routes')).routes.some(route=>route.name===RUSSIA_ROUTE.name),false);
   assert.equal((await engine.profiles(manual)).length,links.length);

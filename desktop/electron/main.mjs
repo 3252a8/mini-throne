@@ -20,6 +20,7 @@ app.setPath('userData',customData||path.join(app.getPath('appData'),'Mini Throne
 if(!app.requestSingleInstanceLock()){app.quit();}else{
   let window,tray,trayConnected=null,trayIcons,engine,account,updater,quitting=false,queue=Promise.resolve(),polling=false,nativeTransition=false,nativeInitial=null;
   const directory=app.getPath('userData');
+  let serviceRetryAt=0,serviceRetryDelay=5000;
   let privateConfig={systemProxy:true,tun:false,autoLaunch:false,language:app.getLocale().startsWith('ru')?'ru':'en',group:null,subscriptionHash:null,manualGroups:[],sourceId:null,selectedProfile:null};
   let state={version:app.getVersion(),ready:false,connected:false,busy:false,testing:false,testError:false,tunAvailable:false,tunConflict:false,profiles:[],selected:null,sources:[],sourceId:null,branding:null,origin:null,expiresAt:null,traffic:null,active:false,login:null,error:null,update:{status:'unconfigured'},settings:privateConfig,demo,advanced:false,routeName:null};
   function publish(){if(tray&&trayIcons&&trayConnected!==state.connected){trayConnected=state.connected;tray.setImage(trayIcons[state.connected?'online':'offline']);tray.setToolTip('Mini Throne · '+(privateConfig.language==='ru'?(state.connected?'Подключено':'Не подключено'):(state.connected?'Connected':'Disconnected')));}state.settings={systemProxy:privateConfig.systemProxy,tun:privateConfig.tun,autoLaunch:privateConfig.autoLaunch,language:privateConfig.language};if(window&&!window.isDestroyed())window.webContents.send('mini:state',state);}
@@ -64,6 +65,9 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       if(state.sourceId!==null&&state.sourceId!==-1){
         if(state.sources.find(source=>source.id===state.sourceId)?.subscription)await engine.call('POST',`/v1/groups/${state.sourceId}/update`,{timeout:60});
       }else await refreshService();
+    }catch(error){
+      if(account.value&&state.sourceId===-1){serviceRetryAt=Date.now()+serviceRetryDelay;serviceRetryDelay=Math.min(60000,serviceRetryDelay*2);}
+      throw error;
     }finally{await syncSources();await loadManual();}
   }
   async function refreshService(){
@@ -87,7 +91,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     state.branding={...normalizeBranding(brand),logo:await logo(account.value.origin,brand.logo_url)};
     state.traffic=data.subscription?.traffic||null;
     state.origin=account.value.origin;state.expiresAt=data.subscription?.expires_at||null;state.active=data.subscription?.active===true;
-    if(!state.active){await engine.disconnect();state.connected=false;state.profiles=[];return;}
+    if(!state.active){await engine.disconnect();state.connected=false;state.profiles=[];serviceRetryAt=0;serviceRetryDelay=5000;return;}
     const url=new URL(data.subscription.url);if(url.protocol!=='https:'||url.username||url.password)throw new Error('unsafe_subscription');
     const {createHash}=await import('node:crypto');const hash=createHash('sha256').update('xray-json-v1:'+url.href).digest('hex');
     if(hash!==privateConfig.subscriptionHash||!Number.isInteger(privateConfig.group)){
@@ -100,6 +104,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     if(!state.profiles.some(p=>p.id===state.selected))state.selected=state.profiles.find(p=>p.id===privateConfig.selectedProfile)?.id??state.profiles.find(p=>p.name===previousName)?.id??state.profiles[0]?.id??null;
     privateConfig.selectedProfile=state.selected;await saveConfig();
     if(resume&&state.selected!==null){await engine.connect(state.selected,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
+    serviceRetryAt=0;serviceRetryDelay=5000;
   }
   async function returnFromNative(){
     if(!state.advanced)return true;
@@ -235,5 +240,6 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
     const initialLink=process.argv.find(arg=>arg.startsWith('mini-throne:'));if(initialLink)link(initialLink);
     setInterval(async()=>{if(polling||state.busy||state.advanced||!state.ready||quitting)return;polling=true;try{const status=await engine.status();if(state.advanced||state.busy)return;capabilities(status);state.connected=status.state==='running';if(!state.connected)await engine.disableProxy();if(status.profile)state.selected=status.profile.id;publish();}catch{if(!state.advanced&&!state.busy){state.connected=false;state.error='engine_unavailable';publish();}}finally{polling=false;}},2500).unref();
     setInterval(()=>{if(state.sources.length&&!state.busy&&!state.advanced&&!state.testing)void operation(refresh);},3600000).unref();
+    setInterval(()=>{if(serviceRetryAt&&Date.now()>=serviceRetryAt&&account.value&&state.sourceId===-1&&!state.busy&&!state.testing&&!state.advanced&&!quitting){serviceRetryAt=0;void operation(refresh);}},5000).unref();
   }).catch(()=>{state.error='startup_failed';publish();});
 }
