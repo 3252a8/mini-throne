@@ -9,6 +9,8 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {request} from './throne-api.mjs';
 import {jsonProfiles,fullXraySubscription,preferredSubscription} from './subscription.mjs';
 import {prepareNativeApi} from './native-settings.mjs';
+import {profileDetails} from './profile-details.mjs';
+import {installGeoAssets} from './geo-assets.mjs';
 
 export const RUSSIA_ROUTE = {
   name:'Mini Throne · Bypass Russia · Offline',kind:'raw',default_outbound:-1,prevent_modifications:false
@@ -25,6 +27,8 @@ export class Engine {
     if(this.child&&this.child.exitCode===null)throw new Error('engine_already_running');
     this.native=native;
     await fs.mkdir(this.data,{recursive:true});
+    await installGeoAssets(path.resolve(this.ruleDirectory,'../geo'),this.data);
+    this.detailCache=new Map();
     await promisify(execFile)(this.guard,['--recover',path.join(this.data,'proxy-backup.json')],{windowsHide:true,timeout:5000});
     const manifest=JSON.parse(await fs.readFile(path.join(this.ruleDirectory,'manifest.json'),'utf8'));
     for(const name of ['geoip-ru.srs','geosite-category-ru.srs']){
@@ -83,10 +87,21 @@ export class Engine {
     if(!initialized){await this.call('PUT','/v1/routes/active',{id:route.id});await fs.writeFile(marker,JSON.stringify({version:1}));}
     return this.status();
   }
-  call(method,path,body,query) {if(!this.connection)throw new Error('engine_unavailable');return request(this.connection,method,path,body,query);}
+  call(method,path,body,query) {if(!this.connection)throw new Error('engine_unavailable');if(method!=='GET'&&/^\/v1\/(groups|profiles|import)/.test(path))this.detailCache?.clear();return request(this.connection,method,path,body,query);}
   status(){return this.call('GET','/v1/status');}
   setTun(enabled){return this.call('PUT','/v1/modes',{tun:enabled,timeout:60});}
-  async profiles(group) {const result=await this.call('GET','/v1/profiles',undefined,{group:String(group)});return result.profiles;}
+  async profiles(group) {
+    const {profiles}=await this.call('GET','/v1/profiles',undefined,{group:String(group)});
+    // A bounded number of local encrypted API calls; latency polling reuses labels.
+    for(let offset=0;offset<profiles.length;offset+=4)await Promise.all(profiles.slice(offset,offset+4).map(async profile=>{
+      if(!this.detailCache.has(profile.id)){
+        const config=await this.call('GET',`/v1/profiles/${profile.id}/config`);
+        this.detailCache.set(profile.id,profileDetails(profile.type,config.outbound));
+      }
+      profile.details=this.detailCache.get(profile.id);
+    }));
+    return profiles;
+  }
   async testLatency(ids,onProgress){
     if(this.testJob)throw new Error('test_busy');
     const job=await this.call('POST','/v1/tests',{kind:'latency',profiles:ids,wait:false});

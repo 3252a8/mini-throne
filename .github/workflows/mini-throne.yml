@@ -26,7 +26,17 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
         working-directory: desktop
+      - run: node node_modules/electron/install.js
+        working-directory: desktop
       - run: node scripts/prepare-runtime.mjs
+        working-directory: desktop
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: core/go.sum
+      - run: node scripts/build-core.mjs
+        working-directory: desktop
+      - run: node scripts/prepare-geo.mjs
         working-directory: desktop
       - run: npm run check
         working-directory: desktop

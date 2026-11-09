@@ -5,6 +5,7 @@ import {parseImportLink,parseDeepLink} from '../electron/urls.mjs';
 import {normalizeBranding} from '../electron/branding.mjs';
 import {jsonProfiles,preferredSubscription} from '../electron/subscription.mjs';
 import {renewalUrl} from '../electron/service-links.mjs';
+import {profileDetails} from '../electron/profile-details.mjs';
 
 const {privateKey,publicKey}=generateKeyPairSync('ed25519');
 const policy={repository:'3252a8/mini-throne',publicKey:publicKey.export({format:'der',type:'spki'}).subarray(-32).toString('base64')};
@@ -32,3 +33,10 @@ console.log('Theme validation, fallback branding, complete JSON preservation and
 assert.equal(renewalUrl('https://example.com'), 'https://example.com/?renew=1');
 for(const origin of ['http://example.com','javascript:alert(1)','https://user:password@example.com'])assert.throws(()=>renewalUrl(origin));
 console.log('Direct renewal checkout and unsafe-origin rejection: passed');
+const tlsServer={type:'vless',uuid:'must-stay-private',server:'private.example',tls:{enabled:true,reality:{enabled:true}},transport:{type:'grpc'}};
+assert.deepEqual(profileDetails('vless',tlsServer),{labels:['VLESS · gRPC · Reality'],automatic:false});
+const automatic={routing:{balancers:[{selector:['proxy']}]},outbounds:[{protocol:'vless',streamSettings:{network:'xhttp',security:'reality'}},{protocol:'hysteria',streamSettings:{network:'hysteria',security:'tls'}},{protocol:'freedom'}]};
+assert.deepEqual(profileDetails('custom',{config:JSON.stringify(automatic)}),{labels:['VLESS · XHTTP · Reality','Hysteria 2 · QUIC · TLS'],automatic:true});
+assert.deepEqual(profileDetails('custom',{config:'broken'}),{labels:[],automatic:false});
+assert.ok(!JSON.stringify(profileDetails('vless',tlsServer)).includes('private'));
+console.log('Protocol, transport, security and automatic-route labels without credentials: passed');

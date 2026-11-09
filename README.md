@@ -1,7 +1,7 @@
 # Mini Throne
 
 Простой Windows-клиент для совместимых инстансов Minishop, на основе Throne.
-**0.1.3 — публичная версия для тестирования.**
+**0.1.6 — публичная версия для тестирования.**
 
 [Скачать EXE для Windows](https://github.com/3252a8/mini-throne/releases/latest/download/Mini-Throne-Setup-x64.exe) · [Релизы и плагин](https://github.com/3252a8/mini-throne/releases/latest)
 
@@ -14,7 +14,13 @@
 открывает штатный интерфейс с той же базой профилей. По умолчанию
 включён системный прокси; TUN требует прав администратора. Режимы взаимно исключаются.
 
-![Главный экран Mini Throne, тестовые серверы](docs/assets/main-alpha5.png)
+<p>
+  <img src="docs/assets/main-0.1.6.png" width="340" alt="Mini Throne: главный экран со стандартным щитом" />
+  <img src="docs/assets/servers-0.1.6.png" width="340" alt="Mini Throne: список серверов с протоколами и пингом" />
+</p>
+
+На скриншотах — вымышленные серверы и данные подписки. Название и щит стандартные;
+после входа совместимый сервис может передать своё оформление и анимированный WebP-логотип.
 
 - [Макет и решения интерфейса](docs/design-alpha5.md)
 - [Исследование, решения и ограничения](docs/research-and-first-iteration.md)

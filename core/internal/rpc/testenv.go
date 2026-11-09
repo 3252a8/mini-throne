@@ -1,7 +1,9 @@
 package rpc
 
 import (
+	"context"
 	"log"
+	"sync"
 	"time"
 
 	"ThroneCore/internal/boxbox"
@@ -17,6 +19,7 @@ type testEnv struct {
 	box   *boxbox.Box
 	tags  []string
 	close func()
+	ready func(context.Context)
 }
 
 // `current` measures the running instance instead of building one, and owns nothing.
@@ -98,7 +101,13 @@ func prepareTestEnv(current bool, needXray bool, xrayConfig string, xrayFullConf
 	if useDefaultOutbound {
 		outTags = []string{box.Outbound().Default().Tag()}
 	}
-	return &testEnv{box: box, tags: outTags, close: unwind}, nil
+	return &testEnv{box: box, tags: outTags, close: unwind, ready: func(ctx context.Context) {
+		var pending sync.WaitGroup
+		for i, instance := range fullXray {
+			pending.Go(func() { xray.AwaitRouting(ctx, instance, xrayFullConfigs[i]) })
+		}
+		pending.Wait()
+	}}, nil
 }
 
 // A probe box has no tun to mark its sockets, so the running Tun's auto_redirect nftables rules would capture them.

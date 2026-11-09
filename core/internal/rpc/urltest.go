@@ -30,6 +30,9 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (*gen.TestResp, erro
 	if in.GetTestCurrent() {
 		testCtx = probe.LiveInstance(testCtx)
 	}
+	if env.ready != nil {
+		env.ready(testCtx)
+	}
 
 	// A muxed config needs a warm connection; the live instance already is one.
 	twice := !in.GetTestCurrent()

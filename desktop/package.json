@@ -1,7 +1,7 @@
 {
   "name": "mini-throne",
   "productName": "Mini Throne",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A simple Windows client for Minishop, powered by Throne",
   "author": "3252a8",
   "license": "GPL-3.0-only",
@@ -85,6 +85,10 @@
       {
         "from": "assets/shield-offline.png",
         "to": "shield-offline.png"
+      },
+      {
+        "from": "assets/geo",
+        "to": "geo"
       }
     ],
     "protocols": [

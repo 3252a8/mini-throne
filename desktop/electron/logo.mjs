@@ -18,8 +18,8 @@ export async function rasterLogo(bytes,webContents){
     const image=new Image();image.src=${JSON.stringify(data)};
     await Promise.race([image.decode(),new Promise((_,reject)=>setTimeout(()=>reject(Error('logo_timeout')),5000))]);
     if(!image.naturalWidth||!image.naturalHeight||image.naturalWidth>8192||image.naturalHeight>8192)return null;
-    const scale=192/Math.max(image.naturalWidth,image.naturalHeight),canvas=document.createElement('canvas');
-    canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
-    canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/png');
+    // Chromium decodes the validated raster directly, preserving WebP animation.
+    // Drawing onto a canvas would retain only its first frame.
+    return image.src;
   })()`}]);
 }

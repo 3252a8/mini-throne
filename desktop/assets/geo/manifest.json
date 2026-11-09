@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/Loyalsoldier/v2ray-rules-dat",
+  "commit": "ae16bf1b4cc7b6c75a977253f8cd16143cd2d117",
+  "files": {
+    "geoip.dat": {
+      "size": 16475153,
+      "sha256": "90b78ab861c1cdc3f871f305f9ceedfb8d6d6329e3a40295e6773e057297384c"
+    },
+    "geosite.dat": {
+      "size": 11441850,
+      "sha256": "97ef2a060a3ab60840f75a135c26872c4e1fbaa2847d0f4de57a927460f71e88"
+    }
+  }
+}

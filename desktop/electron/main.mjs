@@ -54,7 +54,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   async function loadManual(){
     if(state.sourceId===-1)return;
     const profiles=state.sourceId===null?[]:await engine.profiles(state.sourceId);
-    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country:country||'',latency:latency_ms,latencyAt:latency_at,type}));
+    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country:country||'',latency:latency_ms,latencyAt:latency_at,type,details}));
     state.active=profiles.length>0;
     if(!profiles.some(profile=>profile.id===state.selected))state.selected=profiles.find(profile=>profile.id===privateConfig.selectedProfile)?.id??profiles[0]?.id??null;
     privateConfig.selectedProfile=state.selected;await saveConfig();
@@ -100,7 +100,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       privateConfig.subscriptionHash=hash;await saveConfig();
     }else await engine.call('POST',`/v1/groups/${privateConfig.group}/update`,{timeout:60});
     const profiles=await engine.profiles(privateConfig.group);
-    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));
+    state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type,details}));
     if(!state.profiles.some(p=>p.id===state.selected))state.selected=state.profiles.find(p=>p.id===privateConfig.selectedProfile)?.id??state.profiles.find(p=>p.name===previousName)?.id??state.profiles[0]?.id??null;
     privateConfig.selectedProfile=state.selected;await saveConfig();
     if(resume&&state.selected!==null){await engine.connect(state.selected,privateConfig.systemProxy,privateConfig.tun);state.connected=true;}
@@ -120,7 +120,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       state.advanced=false;state.connected=false;
       capabilities(await engine.start());state.ready=true;
       await syncSources({adoptNative:true});
-      if(state.sourceId===-1){const profiles=Number.isInteger(privateConfig.group)?await engine.profiles(privateConfig.group):[];state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));state.active=profiles.length>0;state.selected=profiles.some(p=>p.id===state.selected)?state.selected:profiles[0]?.id??null;}
+      if(state.sourceId===-1){const profiles=Number.isInteger(privateConfig.group)?await engine.profiles(privateConfig.group):[];state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type,details}));state.active=profiles.length>0;state.selected=profiles.some(p=>p.id===state.selected)?state.selected:profiles[0]?.id??null;}
       else await loadManual();
       if(privateConfig.tun)capabilities(await engine.setTun(true));
       state.ready=true;state.error=null;return true;
@@ -162,7 +162,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
       try{
         await engine.testLatency(state.profiles.map(p=>p.id),async()=>{
           const profiles=await engine.profiles(group);
-          state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type}));publish();
+          state.profiles=profiles.map(({id,name,country,latency_ms,latency_at,type,details})=>({id,name,country,latency:latency_ms,latencyAt:latency_at,type,details}));publish();
         });return true;
       }catch{state.testError=true;return false;}finally{state.testing=false;publish();}
     });

@@ -101,3 +101,4 @@ srslist.h
 *.pfx
 
 /desktop/.cache/
+/desktop/assets/geo/*.dat

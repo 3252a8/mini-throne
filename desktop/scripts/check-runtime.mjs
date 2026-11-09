@@ -39,6 +39,8 @@ try{
   const status=await engine.start();
   assert.ok(status.core);
   assert.equal(status.state,'idle');
+  const assets=await engine.call('GET','/v1/geo-assets');
+  assert.equal(assets.files.length,2);assert.ok(assets.files.every(file=>file.present&&file.size>0));
   assert.equal((await engine.call('GET','/v1/settings')).settings.test_url,'https://www.gstatic.com/generate_204');
   assert.equal((await engine.setTun(false)).tun,false);
   if(!status.capabilities?.tun){
@@ -82,6 +84,13 @@ try{
   const ping=await engine.testLatency([chosen.id]);assert.equal(ping.state,'done');
   assert.ok(ping.results[0].latency_ms>=0);assert.ok(ping.results[0].latency_at>0);
   assert.equal((await engine.status()).state,'idle');
+  const observationPort=await listen((_request,response)=>setTimeout(()=>{response.writeHead(204);response.end();},100));
+  const autoConfig={remarks:'Automatic test',outbounds:[{protocol:'freedom',tag:'candidate'}],routing:{balancers:[{tag:'auto',selector:['candidate'],strategy:{type:'leastLoad'}}],rules:[{type:'field',network:'tcp,udp',balancerTag:'auto'}]},burstObservatory:{subjectSelector:['candidate'],pingConfig:{destination:`http://127.0.0.1:${observationPort}/`,interval:'30s',sampling:1,timeout:'2s'}}};
+  const autoGroup=await engine.addSource({kind:'json',name:'Automatic',text:JSON.stringify(autoConfig)});
+  const autoProfiles=await engine.profiles(autoGroup);assert.equal(autoProfiles[0].details.automatic,true);
+  const autoPing=await engine.testLatency([autoProfiles[0].id]);
+  assert.ok(autoPing.results[0].latency_ms>=0);assert.ok(autoPing.results[0].latency_at>0);
+  await engine.call('DELETE',`/v1/groups/${autoGroup}`);
   const fullConfig={remarks:'JSON routing',outbounds:[{protocol:'freedom',tag:'direct'}],routing:{rules:[{type:'field',domain:['example.com'],outboundTag:'direct'}]}};
   const jsonGroup=await engine.addSource({kind:'json',name:'JSON',text:JSON.stringify(fullConfig)});
   const jsonProfiles=await engine.profiles(jsonGroup);assert.equal(jsonProfiles.length,1);assert.equal(jsonProfiles[0].type,'custom');

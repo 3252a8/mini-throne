@@ -4,6 +4,9 @@ Mini Throne retains the Throne 1.4.1 engine, GPL-3.0, from
 https://github.com/throneproj/Throne at 3bbe551d1ca744ad2325b9867160e123ea2b10b9.
 The engine's complete corresponding sources and build scripts are retained at the
 repository root. Redistributed engine archives retain their license files.
+Mini Throne rebuilds ThroneCore from these pinned sources with a local fix that
+waits for automatic routing observations before latency tests. The Qt engine is
+unchanged. See `scripts/build-core.mjs` for the reproducible Windows build.
 
 Throne's wire protocol is documented at https://github.com/throneproj/Throne-api
 (MIT). The client implementation here is independently written from that protocol.
@@ -21,6 +24,12 @@ The offline Russia rule sets come from MetaCubeX/meta-rules-dat (GPL-3.0),
 commit 1df33612b1ccc2346e4dbe47a69facf7d1c780bf on its sing branch. Their JSON
 sources, binary SRS files, license and exact SHA-256 provenance are in
 `desktop/assets/rules/`. Recompile the JSON sources with sing-box `rule-set compile`.
+
+Bundled Xray `geoip.dat` and `geosite.dat` come from Loyalsoldier/v2ray-rules-dat
+(GPL-3.0), commit ae16bf1b4cc7b6c75a977253f8cd16143cd2d117.
+Their license and SHA-256 manifest are shipped in `geo/`; `scripts/prepare-geo.mjs`
+fetches and verifies those exact assets during the build. Custom user databases
+are preserved. Source: https://github.com/Loyalsoldier/v2ray-rules-dat.
 
 Twemoji Country Flags (country-flag-emoji-polyfill 0.1.10, TalkJS) is bundled
 for Windows flag rendering. Code: MIT; Twemoji artwork: CC BY 4.0.
