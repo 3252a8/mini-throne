@@ -105,6 +105,7 @@ def main() -> None:
         },
         "backend": {"entry_point": "mini_throne_plugin:plugin"},
         "frontend": {
+            "preview": "mini-throne-preview.webp",
             "user": {
                 "entry": "customer/index.js",
                 "styles": ["customer/style.css"],
